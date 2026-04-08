@@ -11,6 +11,7 @@ from .data_source import (
     KuwoSearchResponseError,
     KuwoTrackError,
     close_http_client,
+    get_song_detailed_media,
     get_song_media,
     initialize_http_client,
     search_songs,
@@ -168,12 +169,24 @@ async def handle_kwid(arp: Arparma) -> None:
 
     config = get_runtime_config()
     try:
-        message = await _fetch_track_message(
-            rid=rid,
-            config=config,
+        media = await get_song_detailed_media(
+            rid,
+            get_quality_bitrate(config.kuwo_default_quality),
         )
     except KuwoTrackError:
-        await kwid.finish("获取播放链接失败")
+        await kwid.finish("获取歌曲信息失败")
+    message = _build_track_message(
+        format_track_text(
+            rid=rid,
+            bitrate=media.bitrate,
+            duration=media.duration,
+            direct_url=media.direct_url,
+            title=media.title,
+            artist=media.artist,
+            album=media.album,
+        ),
+        media.cover_url,
+    )
     await kwid.finish(message)
 
 

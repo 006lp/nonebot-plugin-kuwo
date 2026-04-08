@@ -68,6 +68,43 @@ class KuwoTrackLinkResponse(BaseModel):
         return int(value)
 
 
+class KuwoTrackDetail(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    song_id: int = Field(alias="id")
+    name: str = Field(alias="name")
+    artist: str = Field(alias="artist", default="")
+    album: str = Field(alias="album", default="")
+    cover_url: str | None = Field(alias="albumPic", default=None)
+
+    @field_validator("song_id", mode="before")
+    @classmethod
+    def parse_song_id(cls, value: int | str) -> int:
+        return int(value)
+
+    @field_validator("cover_url", mode="before")
+    @classmethod
+    def normalize_cover_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cover_url = value.strip()
+        return cover_url or None
+
+
+class KuwoTrackDetailResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    errorcode: int = Field(alias="errorcode")
+    errormsg: str = Field(alias="errormsg", default="")
+    result: str = Field(alias="result", default="")
+    songs: list[KuwoTrackDetail] = Field(alias="songs", default_factory=list)
+
+    @field_validator("errorcode", mode="before")
+    @classmethod
+    def parse_error_code(cls, value: int | str) -> int:
+        return int(value)
+
+
 class KuwoTrackResource(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -76,3 +113,9 @@ class KuwoTrackResource(BaseModel):
     duration: int
     direct_url: str
     cover_url: str | None = None
+
+
+class KuwoDetailedTrackResource(KuwoTrackResource):
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None

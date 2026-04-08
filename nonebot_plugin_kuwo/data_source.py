@@ -6,8 +6,11 @@ import httpx
 from pydantic import ValidationError
 
 from .models import (
+    KuwoDetailedTrackResource,
     KuwoSearchResponse,
     KuwoSearchSong,
+    KuwoTrackDetail,
+    KuwoTrackDetailResponse,
     KuwoTrackLinkData,
     KuwoTrackLinkResponse,
     KuwoTrackResource,
@@ -16,6 +19,7 @@ from .models import (
 SEARCH_API_URL = "http://search.kuwo.cn/r.s"
 TRACK_API_URL = "https://nmobi.kuwo.cn/mobi.s"
 COVER_API_URL = "http://artistpicserver.kuwo.cn/pic.web"
+DETAIL_API_URL = "http://musicpay.kuwo.cn/music.pay"
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 _client: httpx.AsyncClient | None = None
@@ -118,6 +122,23 @@ async def get_song_media(rid: str, br: str) -> KuwoTrackResource:
     )
 
 
+async def get_song_detailed_media(rid: str, br: str) -> KuwoDetailedTrackResource:
+    track_data, detail = await asyncio.gather(
+        get_song_link(rid, br),
+        get_song_detail(rid),
+    )
+    return KuwoDetailedTrackResource(
+        rid=rid,
+        bitrate=track_data.bitrate,
+        duration=track_data.duration,
+        direct_url=track_data.direct_url,
+        cover_url=detail.cover_url,
+        title=detail.name,
+        artist=detail.artist,
+        album=detail.album,
+    )
+
+
 async def get_song_link(rid: str, br: str) -> KuwoTrackLinkData:
     client = await get_http_client()
     params = {
@@ -147,6 +168,39 @@ async def get_song_link(rid: str, br: str) -> KuwoTrackLinkData:
     if track_response.code != 200:
         raise KuwoTrackResponseError(f"track response code is {track_response.code}")
     return track_response.data
+
+
+async def get_song_detail(rid: str) -> KuwoTrackDetail:
+    client = await get_http_client()
+    params = {
+        "src": "kwplayer_ar_11.3.1.1_40.apk",
+        "op": "query",
+        "action": "play",
+        "ids": rid,
+    }
+    try:
+        response = await client.get(DETAIL_API_URL, params=params)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise KuwoTrackNetworkError("track detail request failed") from exc
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise KuwoTrackResponseError("track detail response is not valid json") from exc
+
+    try:
+        detail_response = KuwoTrackDetailResponse.model_validate(payload)
+    except ValidationError as exc:
+        raise KuwoTrackResponseError("track detail response schema mismatch") from exc
+
+    if detail_response.errorcode != 0:
+        raise KuwoTrackResponseError(
+            f"track detail response error is {detail_response.errorcode}"
+        )
+    if detail_response.result.lower() != "ok" or not detail_response.songs:
+        raise KuwoTrackResponseError("track detail response missing songs")
+    return detail_response.songs[0]
 
 
 async def get_song_cover(rid: str) -> str | None:

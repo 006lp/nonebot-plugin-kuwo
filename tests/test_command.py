@@ -11,7 +11,11 @@ from nonebot.adapters.onebot.v11 import (
 )
 
 from nonebot_plugin_kuwo.config import Config, SearchRenderMode
-from nonebot_plugin_kuwo.models import KuwoSearchSong, KuwoTrackResource
+from nonebot_plugin_kuwo.models import (
+    KuwoDetailedTrackResource,
+    KuwoSearchSong,
+    KuwoTrackResource,
+)
 
 
 def make_private_event(message: str) -> PrivateMessageEvent:
@@ -176,18 +180,27 @@ async def test_kwid_command_returns_cover_and_text(
 
     dummy_matcher = DummyMatcher()
 
-    async def fake_get_song_media(rid: str, br: str) -> KuwoTrackResource:
+    async def fake_get_song_detailed_media(
+        rid: str, br: str
+    ) -> KuwoDetailedTrackResource:
         assert rid == "553152678"
         assert br == "128kmp3"
-        return KuwoTrackResource(
+        return KuwoDetailedTrackResource(
             rid=rid,
             bitrate=128,
             duration=182,
             direct_url="http://example.com/song.mp3",
-            cover_url="http://example.com/cover.jpg",
+            cover_url="http://example.com/album.jpg",
+            title="ポケットをふくらませて ～Sea, you again～",
+            artist="VISUAL ARTS&Key Sounds Label&rionos",
+            album="Summer Pockets REFLECTION BLUE Original SoundTrack",
         )
 
-    monkeypatch.setattr(nonebot_plugin_kuwo, "get_song_media", fake_get_song_media)
+    monkeypatch.setattr(
+        nonebot_plugin_kuwo,
+        "get_song_detailed_media",
+        fake_get_song_detailed_media,
+    )
     monkeypatch.setattr(nonebot_plugin_kuwo, "kwid", dummy_matcher)
     monkeypatch.setattr(
         nonebot_plugin_kuwo,
@@ -201,9 +214,10 @@ async def test_kwid_command_returns_cover_and_text(
 
     expected = Message(
         [
-            MessageSegment.image("http://example.com/cover.jpg"),
+            MessageSegment.image("http://example.com/album.jpg"),
             MessageSegment.text(
-                "\n歌曲ID：553152678\n"
+                "\nポケットをふくらませて ～Sea, you again～ - VISUAL ARTS&Key Sounds Label&rionos\n"
+                "专辑：Summer Pockets REFLECTION BLUE Original SoundTrack\n"
                 "时长：182s\n"
                 "码率：128 kbps\n"
                 "直链：http://example.com/song.mp3"

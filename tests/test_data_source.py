@@ -6,10 +6,12 @@ import respx
 
 from nonebot_plugin_kuwo.data_source import (
     COVER_API_URL,
+    DETAIL_API_URL,
     SEARCH_API_URL,
     TRACK_API_URL,
     KuwoSearchResponseError,
     close_http_client,
+    get_song_detailed_media,
     get_song_media,
     search_songs,
 )
@@ -38,6 +40,23 @@ TRACK_RESPONSE = {
     },
     "locationid": "1",
     "msg": "ok",
+}
+
+DETAIL_RESPONSE = {
+    "Reason": "",
+    "errorcode": 0,
+    "errormsg": "MusicPay_OK",
+    "result": "ok",
+    "songs": [
+        {
+            "album": "Summer Pockets REFLECTION BLUE Original SoundTrack",
+            "albumPic": "http://example.com/album.jpg",
+            "artist": "VISUAL ARTS&Key Sounds Label&rionos",
+            "duration": 410,
+            "id": 320490745,
+            "name": "ポケットをふくらませて ～Sea, you again～",
+        }
+    ],
 }
 
 
@@ -86,5 +105,27 @@ async def test_get_song_media_returns_direct_url_and_cover() -> None:
     assert media.duration == 242
     assert media.direct_url == "http://example.com/song.flac"
     assert media.cover_url == "http://example.com/cover.jpg"
+
+    await close_http_client()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_song_detailed_media_returns_track_detail() -> None:
+    respx.get(TRACK_API_URL).mock(return_value=httpx.Response(200, json=TRACK_RESPONSE))
+    respx.get(DETAIL_API_URL).mock(
+        return_value=httpx.Response(200, json=DETAIL_RESPONSE)
+    )
+
+    media = await get_song_detailed_media("320490745", "2000kflac")
+
+    assert media.rid == "320490745"
+    assert media.bitrate == 2000
+    assert media.duration == 242
+    assert media.direct_url == "http://example.com/song.flac"
+    assert media.title == "ポケットをふくらませて ～Sea, you again～"
+    assert media.artist == "VISUAL ARTS&Key Sounds Label&rionos"
+    assert media.album == "Summer Pockets REFLECTION BLUE Original SoundTrack"
+    assert media.cover_url == "http://example.com/album.jpg"
 
     await close_http_client()
