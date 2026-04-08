@@ -16,6 +16,7 @@ from nonebot_plugin_kuwo.models import (
     KuwoSearchSong,
     KuwoTrackResource,
 )
+from nonebot_plugin_kuwo.utils import format_track_text
 
 
 def make_private_event(message: str) -> PrivateMessageEvent:
@@ -103,6 +104,66 @@ async def test_kwsearch_command_returns_text_results(
 
 
 @pytest.mark.asyncio
+async def test_kwsearch_command_returns_image_results(
+    app: nonebug.App,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nonebot_plugin_kuwo
+    import nonebot_plugin_kuwo.render as render_module
+
+    kwsearch = nonebot_plugin_kuwo.kwsearch
+    render_calls: dict[str, str] = {}
+
+    async def fake_search(keyword: str, limit: int) -> list[KuwoSearchSong]:
+        assert keyword == "Morning Dew Reflection"
+        assert limit == 5
+        return [
+            KuwoSearchSong.model_validate(
+                {
+                    "MUSICRID": "MUSIC_553152678",
+                    "NAME": "Morning Dew Reflection.wav",
+                    "ARTIST": "rionos&Kangseoha&Kim Yoon",
+                    "ALBUM": "Morning Dew Reflection",
+                    "DURATION": "182",
+                    "web_albumpic_short": "120/s4s64/98/1370027605.jpg",
+                }
+            )
+        ]
+
+    async def fake_html_to_pic(**kwargs) -> bytes:
+        render_calls["html"] = kwargs["html"]
+        render_calls["template_path"] = kwargs["template_path"]
+        return b"rendered-image"
+
+    monkeypatch.setattr(nonebot_plugin_kuwo, "search_songs", fake_search)
+    monkeypatch.setattr(render_module, "_load_html_to_pic", lambda: fake_html_to_pic)
+    monkeypatch.setattr(
+        nonebot_plugin_kuwo,
+        "get_runtime_config",
+        lambda: Config(
+            kuwo_search_limit=5,
+            kuwo_search_render_mode=SearchRenderMode.IMAGE,
+            kuwo_default_quality="standard",
+        ),
+    )
+
+    event = make_private_event("/kwsearch Morning Dew Reflection")
+    expected = Message([MessageSegment.image(b"rendered-image")])
+
+    async with app.test_matcher(kwsearch) as ctx:
+        adapter = ctx.create_adapter(base=Adapter)
+        bot = ctx.create_bot(base=Bot, adapter=adapter, self_id="1")
+        ctx.receive_event(bot, event)
+        ctx.should_call_send(event, expected, bot=bot)
+
+    assert (
+        "http://img1.kwcdn.kuwo.cn/star/albumcover/120/s4s64/98/1370027605.jpg"
+        in render_calls["html"]
+    )
+    assert render_calls["template_path"].startswith("file://")
+
+
+@pytest.mark.asyncio
 async def test_kw_command_returns_cover_and_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -153,11 +214,16 @@ async def test_kw_command_returns_cover_and_text(
         [
             MessageSegment.image("http://example.com/cover.jpg"),
             MessageSegment.text(
-                "\nMorning Dew Reflection.wav - rionos&Kangseoha&Kim Yoon\n"
-                "专辑：Morning Dew Reflection\n"
-                "时长：242s\n"
-                "码率：2000 kbps\n"
-                "直链：http://example.com/song.flac"
+                "\n"
+                + format_track_text(
+                    rid="553152678",
+                    bitrate=2000,
+                    duration=242,
+                    direct_url="http://example.com/song.flac",
+                    title="Morning Dew Reflection.wav",
+                    artist="rionos&Kangseoha&Kim Yoon",
+                    album="Morning Dew Reflection",
+                )
             ),
         ]
     )
@@ -191,7 +257,7 @@ async def test_kwid_command_returns_cover_and_text(
             duration=182,
             direct_url="http://example.com/song.mp3",
             cover_url="http://example.com/album.jpg",
-            title="ポケットをふくらませて ～Sea, you again～",
+            title="Pocket wo Fukurasete ~Sea, you again~",
             artist="VISUAL ARTS&Key Sounds Label&rionos",
             album="Summer Pockets REFLECTION BLUE Original SoundTrack",
         )
@@ -216,11 +282,16 @@ async def test_kwid_command_returns_cover_and_text(
         [
             MessageSegment.image("http://example.com/album.jpg"),
             MessageSegment.text(
-                "\nポケットをふくらませて ～Sea, you again～ - VISUAL ARTS&Key Sounds Label&rionos\n"
-                "专辑：Summer Pockets REFLECTION BLUE Original SoundTrack\n"
-                "时长：182s\n"
-                "码率：128 kbps\n"
-                "直链：http://example.com/song.mp3"
+                "\n"
+                + format_track_text(
+                    rid="553152678",
+                    bitrate=128,
+                    duration=182,
+                    direct_url="http://example.com/song.mp3",
+                    title="Pocket wo Fukurasete ~Sea, you again~",
+                    artist="VISUAL ARTS&Key Sounds Label&rionos",
+                    album="Summer Pockets REFLECTION BLUE Original SoundTrack",
+                )
             ),
         ]
     )

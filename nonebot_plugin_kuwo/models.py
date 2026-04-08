@@ -4,6 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .utils import normalize_musicrid, strip_url_query
 
+SEARCH_COVER_BASE_URL = "http://img1.kwcdn.kuwo.cn/star/albumcover/"
+
 
 class KuwoSearchSong(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -13,15 +15,29 @@ class KuwoSearchSong(BaseModel):
     artist: str = Field(alias="ARTIST")
     album: str = Field(alias="ALBUM", default="")
     duration: int = Field(alias="DURATION")
+    web_album_cover_short: str = Field(alias="web_albumpic_short", default="")
 
     @field_validator("duration", mode="before")
     @classmethod
     def parse_duration(cls, value: int | str) -> int:
         return int(value)
 
+    @field_validator("web_album_cover_short", mode="before")
+    @classmethod
+    def normalize_cover_path(cls, value: str | None) -> str:
+        if value is None:
+            return ""
+        return value.strip()
+
     @property
     def song_id(self) -> str:
         return normalize_musicrid(self.musicrid)
+
+    @property
+    def album_cover_url(self) -> str | None:
+        if not self.web_album_cover_short:
+            return None
+        return f"{SEARCH_COVER_BASE_URL}{self.web_album_cover_short.lstrip('/')}"
 
 
 class KuwoSearchResponse(BaseModel):

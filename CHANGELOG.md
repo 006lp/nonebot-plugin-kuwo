@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1 - 2026-04-09
+
+- 为 `kwsearch` / `kw搜索` 增加基于 `nonebot-plugin-htmlrender` 的图片列表渲染
+- 搜索结果模型新增 `web_albumpic_short` 字段，并支持直接拼接搜索列表封面 URL
+- 搜索结果图片模式改为直接复用搜索接口封面信息，不再为列表中的每首歌单独请求封面接口
+- 新增 `kwsearch` 图片模式命令测试，补充现有命令测试的 UTF-8 清理与断言稳定性
+- 图片渲染失败时回退到文本模式，避免直接影响正常会话
+
 ## 0.1.0 - 2026-04-08
 
 - 使用 `uv` 初始化并补齐 NoneBot2、OneBot、Alconna、httpx、pytest、nonebug 等依赖
