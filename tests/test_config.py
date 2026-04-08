@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
-from nonebot_plugin_kuwo.config import Config, SearchRenderMode, get_runtime_config
+from nonebot_plugin_kuwo.config import (
+    Config,
+    SearchRenderMode,
+    get_quality_bitrate,
+    get_runtime_config,
+)
 
 
 def test_get_runtime_config_reads_latest_env(monkeypatch) -> None:
@@ -12,7 +17,7 @@ def test_get_runtime_config_reads_latest_env(monkeypatch) -> None:
 
     env_file = test_root / ".env"
     env_file.write_text(
-        "KUWO_SEARCH_LIMIT=7\nKUWO_SEARCH_RENDER_MODE=image\nKUWO_DEFAULT_QUALITY=320kmp3\n",
+        "KUWO_SEARCH_LIMIT=7\nKUWO_SEARCH_RENDER_MODE=image\nKUWO_DEFAULT_QUALITY=lossless\n",
         encoding="utf-8",
     )
 
@@ -26,4 +31,5 @@ def test_get_runtime_config_reads_latest_env(monkeypatch) -> None:
 
     assert config.kuwo_search_limit == 7
     assert config.kuwo_search_render_mode is SearchRenderMode.IMAGE
-    assert config.kuwo_default_quality == "320kmp3"
+    assert config.kuwo_default_quality.value == "lossless"
+    assert get_quality_bitrate(config.kuwo_default_quality) == "2000kflac"

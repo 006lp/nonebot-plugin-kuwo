@@ -17,6 +17,27 @@ class SearchRenderMode(str, Enum):
     IMAGE = "image"
 
 
+class KuwoQuality(str, Enum):
+    STANDARD = "standard"
+    EXHIGH = "exhigh"
+    LOSSLESS = "lossless"
+    HIRES = "hires"
+    HIFI = "hifi"
+    SUR = "sur"
+    JYMASTER = "jymaster"
+
+
+QUALITY_TO_BR = {
+    KuwoQuality.STANDARD: "128kmp3",
+    KuwoQuality.EXHIGH: "320kmp3",
+    KuwoQuality.LOSSLESS: "2000kflac",
+    KuwoQuality.HIRES: "4000kflac",
+    KuwoQuality.HIFI: "20201kmflac",
+    KuwoQuality.SUR: "20501kmflac",
+    KuwoQuality.JYMASTER: "20900kmflac",
+}
+
+
 class Config(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
@@ -25,10 +46,9 @@ class Config(BaseModel):
         default=SearchRenderMode.TEXT,
         alias="KUWO_SEARCH_RENDER_MODE",
     )
-    kuwo_default_quality: str = Field(
-        default="128kmp3",
+    kuwo_default_quality: KuwoQuality = Field(
+        default=KuwoQuality.STANDARD,
         alias="KUWO_DEFAULT_QUALITY",
-        min_length=1,
     )
 
     @field_validator("kuwo_search_render_mode", mode="before")
@@ -36,6 +56,13 @@ class Config(BaseModel):
     def normalize_render_mode(
         cls, value: SearchRenderMode | str
     ) -> SearchRenderMode | str:
+        if isinstance(value, str):
+            return value.lower()
+        return value
+
+    @field_validator("kuwo_default_quality", mode="before")
+    @classmethod
+    def normalize_default_quality(cls, value: KuwoQuality | str) -> KuwoQuality | str:
         if isinstance(value, str):
             return value.lower()
         return value
@@ -81,3 +108,7 @@ def get_runtime_config() -> Config:
     except ValidationError as exc:
         logger.opt(exception=exc).warning("酷我插件配置解析失败，已回退到当前运行配置")
         return get_plugin_config(Config)
+
+
+def get_quality_bitrate(quality: KuwoQuality) -> str:
+    return QUALITY_TO_BR[quality]

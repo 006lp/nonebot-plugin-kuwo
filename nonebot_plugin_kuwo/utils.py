@@ -19,3 +19,34 @@ def join_keyword_parts(parts: Sequence[str]) -> str:
 
 def format_search_result_line(index: int, song_id: str, name: str, artist: str) -> str:
     return f"{index}. {song_id} {name}-{artist}"
+
+
+def strip_url_query(url: str) -> str:
+    return url.split("?", maxsplit=1)[0]
+
+
+def format_track_text(
+    *,
+    rid: str,
+    bitrate: int,
+    duration: int,
+    direct_url: str,
+    title: str | None = None,
+    artist: str | None = None,
+    album: str | None = None,
+) -> str:
+    lines: list[str] = []
+    if title and artist:
+        lines.append(f"{title} - {artist}")
+    elif title:
+        lines.append(title)
+    else:
+        lines.append(f"歌曲ID：{rid}")
+
+    if album:
+        lines.append(f"专辑：{album}")
+
+    lines.append(f"时长：{duration}s")
+    lines.append(f"码率：{bitrate} kbps")
+    lines.append(f"直链：{direct_url}")
+    return "\n".join(lines)

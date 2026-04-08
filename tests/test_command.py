@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import nonebug
 import pytest
-from nonebot.adapters.onebot.v11 import Adapter, Bot, PrivateMessageEvent
+from nonebot.adapters.onebot.v11 import (
+    Adapter,
+    Bot,
+    Message,
+    MessageSegment,
+    PrivateMessageEvent,
+)
 
 from nonebot_plugin_kuwo.config import Config, SearchRenderMode
-from nonebot_plugin_kuwo.models import KuwoSearchSong
+from nonebot_plugin_kuwo.models import KuwoSearchSong, KuwoTrackResource
 
 
 def make_private_event(message: str) -> PrivateMessageEvent:
@@ -29,6 +35,19 @@ def make_private_event(message: str) -> PrivateMessageEvent:
             "to_me": True,
         }
     )
+
+
+class MatcherFinished(Exception):
+    pass
+
+
+class DummyMatcher:
+    def __init__(self) -> None:
+        self.message = None
+
+    async def finish(self, message) -> None:
+        self.message = message
+        raise MatcherFinished
 
 
 @pytest.mark.asyncio
@@ -62,7 +81,7 @@ async def test_kwsearch_command_returns_text_results(
         lambda: Config(
             kuwo_search_limit=5,
             kuwo_search_render_mode=SearchRenderMode.TEXT,
-            kuwo_default_quality="128kmp3",
+            kuwo_default_quality="standard",
         ),
     )
 
@@ -77,3 +96,124 @@ async def test_kwsearch_command_returns_text_results(
             "1. 553152678 Morning Dew Reflection.wav-rionos&Kangseoha&Kim Yoon",
             bot=bot,
         )
+
+
+@pytest.mark.asyncio
+async def test_kw_command_returns_cover_and_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nonebot_plugin_kuwo
+
+    dummy_matcher = DummyMatcher()
+
+    async def fake_search(keyword: str, limit: int) -> list[KuwoSearchSong]:
+        assert keyword == "Morning Dew Reflection"
+        assert limit == 1
+        return [
+            KuwoSearchSong.model_validate(
+                {
+                    "MUSICRID": "MUSIC_553152678",
+                    "NAME": "Morning Dew Reflection.wav",
+                    "ARTIST": "rionos&Kangseoha&Kim Yoon",
+                    "ALBUM": "Morning Dew Reflection",
+                    "DURATION": "182",
+                }
+            )
+        ]
+
+    async def fake_get_song_media(rid: str, br: str) -> KuwoTrackResource:
+        assert rid == "553152678"
+        assert br == "2000kflac"
+        return KuwoTrackResource(
+            rid=rid,
+            bitrate=2000,
+            duration=242,
+            direct_url="http://example.com/song.flac",
+            cover_url="http://example.com/cover.jpg",
+        )
+
+    monkeypatch.setattr(nonebot_plugin_kuwo, "search_songs", fake_search)
+    monkeypatch.setattr(nonebot_plugin_kuwo, "get_song_media", fake_get_song_media)
+    monkeypatch.setattr(nonebot_plugin_kuwo, "kw", dummy_matcher)
+    monkeypatch.setattr(
+        nonebot_plugin_kuwo,
+        "get_runtime_config",
+        lambda: Config(
+            kuwo_search_limit=5,
+            kuwo_search_render_mode=SearchRenderMode.TEXT,
+            kuwo_default_quality="lossless",
+        ),
+    )
+
+    expected = Message(
+        [
+            MessageSegment.image("http://example.com/cover.jpg"),
+            MessageSegment.text(
+                "\nMorning Dew Reflection.wav - rionos&Kangseoha&Kim Yoon\n"
+                "专辑：Morning Dew Reflection\n"
+                "时长：242s\n"
+                "码率：2000 kbps\n"
+                "直链：http://example.com/song.flac"
+            ),
+        ]
+    )
+
+    arp = type(
+        "Arp", (), {"all_matched_args": {"keyword": ("Morning", "Dew", "Reflection")}}
+    )()
+
+    with pytest.raises(MatcherFinished):
+        await nonebot_plugin_kuwo.handle_kw(arp)
+
+    assert dummy_matcher.message == expected
+
+
+@pytest.mark.asyncio
+async def test_kwid_command_returns_cover_and_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nonebot_plugin_kuwo
+
+    dummy_matcher = DummyMatcher()
+
+    async def fake_get_song_media(rid: str, br: str) -> KuwoTrackResource:
+        assert rid == "553152678"
+        assert br == "128kmp3"
+        return KuwoTrackResource(
+            rid=rid,
+            bitrate=128,
+            duration=182,
+            direct_url="http://example.com/song.mp3",
+            cover_url="http://example.com/cover.jpg",
+        )
+
+    monkeypatch.setattr(nonebot_plugin_kuwo, "get_song_media", fake_get_song_media)
+    monkeypatch.setattr(nonebot_plugin_kuwo, "kwid", dummy_matcher)
+    monkeypatch.setattr(
+        nonebot_plugin_kuwo,
+        "get_runtime_config",
+        lambda: Config(
+            kuwo_search_limit=5,
+            kuwo_search_render_mode=SearchRenderMode.TEXT,
+            kuwo_default_quality="standard",
+        ),
+    )
+
+    expected = Message(
+        [
+            MessageSegment.image("http://example.com/cover.jpg"),
+            MessageSegment.text(
+                "\n歌曲ID：553152678\n"
+                "时长：182s\n"
+                "码率：128 kbps\n"
+                "直链：http://example.com/song.mp3"
+            ),
+        ]
+    )
+
+    arp = type("Arp", (), {"all_matched_args": {"rid": "MUSIC_553152678"}})()
+
+    with pytest.raises(MatcherFinished):
+        await nonebot_plugin_kuwo.handle_kwid(arp)
+
+    assert dummy_matcher.message == expected

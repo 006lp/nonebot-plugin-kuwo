@@ -5,9 +5,12 @@ import pytest
 import respx
 
 from nonebot_plugin_kuwo.data_source import (
+    COVER_API_URL,
     SEARCH_API_URL,
+    TRACK_API_URL,
     KuwoSearchResponseError,
     close_http_client,
+    get_song_media,
     search_songs,
 )
 
@@ -22,6 +25,19 @@ SEARCH_RESPONSE = {
             "DURATION": "182",
         }
     ],
+}
+
+TRACK_RESPONSE = {
+    "code": 200,
+    "data": {
+        "bitrate": 2000,
+        "duration": 242,
+        "format": "flac",
+        "rid": 11713652,
+        "url": "http://example.com/song.flac?bitrate$2000&format$flac",
+    },
+    "locationid": "1",
+    "msg": "ok",
 }
 
 
@@ -51,5 +67,24 @@ async def test_search_songs_raises_on_invalid_payload() -> None:
 
     with pytest.raises(KuwoSearchResponseError):
         await search_songs("Morning Dew Reflection", 5)
+
+    await close_http_client()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_song_media_returns_direct_url_and_cover() -> None:
+    respx.get(TRACK_API_URL).mock(return_value=httpx.Response(200, json=TRACK_RESPONSE))
+    respx.get(COVER_API_URL).mock(
+        return_value=httpx.Response(200, text="http://example.com/cover.jpg")
+    )
+
+    media = await get_song_media("11713652", "2000kflac")
+
+    assert media.rid == "11713652"
+    assert media.bitrate == 2000
+    assert media.duration == 242
+    assert media.direct_url == "http://example.com/song.flac"
+    assert media.cover_url == "http://example.com/cover.jpg"
 
     await close_http_client()
