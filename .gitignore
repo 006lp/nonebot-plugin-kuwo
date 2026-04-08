@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Vibe Coding files
+.serena/
+AGENTS.md
+ARCHITECTURE.md
+
+# Test temp files
+tests/.tmp-config*/
+pytest-cache-files-*
+.ruff_cache/
