@@ -20,6 +20,7 @@ class ListRenderMode(str, Enum):
 class TrackRenderMode(str, Enum):
     TEXT = "text"
     CARD = "card"
+    RECORD = "record"
 
 
 class KuwoQuality(str, Enum):

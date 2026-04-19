@@ -9,8 +9,8 @@
 - 命令显式跟随 NoneBot `COMMAND_START`
 - 所有命令均 `block=True`
 - `kwsearch` 支持文本列表和图片列表
-- `/kw <关键词> [-q|--quality <quality>]` 支持返回首条歌曲的文本直链或自定义音乐卡片
-- `/kwid <rid> [-q|--quality <quality>]` 支持返回歌曲详情的文本直链或自定义音乐卡片
+- `/kw <关键词> [-q|--quality <quality>]` 支持返回首条歌曲的文本直链、自定义音乐卡片或语音
+- `/kwid <rid> [-q|--quality <quality>]` 支持返回歌曲详情的文本直链、自定义音乐卡片或语音
 
 ## 命令
 
@@ -37,13 +37,15 @@
   - `title` 使用歌曲名
   - `content` 使用 `歌手 | 专辑`
   - `image` 使用封面
-- `-q/--quality` 当前对 `text` / `card` 生效；未传时使用 `KUWO_DEFAULT_QUALITY`
+- `record` 模式：返回 OneBot V11 `record` 消息段
+- `-q/--quality` 当前对 `text` / `card` 生效；`record` 模式下会强制回落到 `standard`
 
 ### `/kwid`
 
 - `text` 模式：返回封面 + 歌曲信息 + 直链
 - `card` 模式：返回 OneBot V11 自定义音乐卡片
-- `-q/--quality` 当前对 `text` / `card` 生效；未传时使用 `KUWO_DEFAULT_QUALITY`
+- `record` 模式：返回 OneBot V11 `record` 消息段
+- `-q/--quality` 当前对 `text` / `card` 生效；`record` 模式下会强制回落到 `standard`
 
 ## 配置
 
@@ -65,8 +67,8 @@ KUWO_DEFAULT_QUALITY=standard
   - 可选值：`text`、`image`
 - `KUWO_TRACK_RENDER_MODE`
   - `/kw` 与 `/kwid` 单曲输出模式
-  - 当前已实现值：`text`、`card`
-  - 规划扩展值：`record`、`file`
+  - 当前已实现值：`text`、`card`、`record`
+  - 规划扩展值：`file`
 - `KUWO_DEFAULT_QUALITY`
   - 单曲直链默认音质
   - 可选值：`standard`、`exhigh`、`lossless`、`hires`、`hifi`、`sur`、`jymaster`
@@ -94,7 +96,6 @@ uv run pytest tests/ -v
 
 ## 当前限制
 
-- 暂未实现语音 `record` 发送
 - 暂未实现文件 `file` 消息段发送歌曲
 - 暂未实现官方音乐卡片 / 自定义 CQ 卡片以外的播放形态
 - 暂未实现单用户调用次数限制

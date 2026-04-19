@@ -5,6 +5,9 @@
 - 为 `/kw` 与 `/kwid` 增加 `-q/--quality` 选项，当前已接入 `text` / `card` 输出模式
 - 在 `text` / `card` 模式下，命令行传入的 `-q/--quality` 会覆盖 `KUWO_DEFAULT_QUALITY`
 - 补充 `/kw` 带空格关键词并跟随 `-q/--quality` 的命令解析测试，确保参数不会吞掉关键词
+- 为 `/kw` 与 `/kwid` 增加 `record` 输出模式，直接发送 OneBot V11 `record` 消息段
+- `record` 模式强制使用 `standard` 音质；即使配置或命令行传入更高音质，也只在日志中记录回落
+- 补充 `record` 模式下的 `/kw`、`/kwid` 输出测试，以及 `record` 不触发 `kwsearch -> image` 联动的配置测试
 
 ## 0.1.2 - 2026-04-19
 

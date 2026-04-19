@@ -68,6 +68,30 @@ def test_get_runtime_config_uses_image_list_mode_when_track_mode_is_card(monkeyp
     assert config.kuwo_track_render_mode is TrackRenderMode.CARD
 
 
+def test_get_runtime_config_keeps_text_list_mode_when_track_mode_is_record(
+    monkeypatch,
+) -> None:
+    test_root = Path(f"tests/.tmp-config-{uuid4().hex}")
+    test_root.mkdir(parents=True)
+
+    env_file = test_root / ".env"
+    env_file.write_text(
+        "KUWO_TRACK_RENDER_MODE=record\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("nonebot_plugin_kuwo.config.PROJECT_ROOT", test_root)
+    monkeypatch.setattr(
+        "nonebot_plugin_kuwo.config.get_plugin_config",
+        lambda _: Config(),
+    )
+
+    config = get_runtime_config()
+
+    assert config.kuwo_list_render_mode is ListRenderMode.TEXT
+    assert config.kuwo_track_render_mode is TrackRenderMode.RECORD
+
+
 def test_resolve_track_quality_prefers_requested_quality() -> None:
     quality = resolve_track_quality(KuwoQuality.STANDARD, "lossless")
 

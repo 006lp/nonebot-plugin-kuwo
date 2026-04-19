@@ -81,6 +81,9 @@ def build_track_message(
     artist: str | None = None,
     album: str | None = None,
 ) -> str | Message:
+    if render_mode is TrackRenderMode.RECORD:
+        return Message([MessageSegment.record(direct_url)])
+
     if render_mode is TrackRenderMode.CARD:
         return Message(
             [

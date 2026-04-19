@@ -10,6 +10,7 @@ from nonebot.plugin import PluginMetadata, inherit_supported_adapters
 from .config import (
     Config,
     KuwoQuality,
+    TrackRenderMode,
     get_quality_bitrate,
     get_runtime_config,
     resolve_track_quality,
@@ -125,6 +126,7 @@ async def handle_kwsearch(arp: Arparma) -> None:
 async def _resolve_command_quality(
     *,
     command_name: str,
+    render_mode: TrackRenderMode,
     requested_quality: str | KuwoQuality | None,
     default_quality: KuwoQuality,
     finish: Callable[[str | Message], Awaitable[None]],
@@ -134,6 +136,19 @@ async def _resolve_command_quality(
     except ValueError:
         await finish("请输入正确的音质参数")
         raise RuntimeError("invalid quality")
+
+    if render_mode is TrackRenderMode.RECORD and quality is not KuwoQuality.STANDARD:
+        logger.info(
+            (
+                "Record mode forces standard quality: command={}, "
+                "requested_quality={}, default_quality={}, effective_quality={}"
+            ),
+            command_name,
+            requested_quality if requested_quality else "<default>",
+            default_quality.value,
+            KuwoQuality.STANDARD.value,
+        )
+        return KuwoQuality.STANDARD
 
     logger.info(
         "Resolved track quality: command={}, requested_quality={}, effective_quality={}",
@@ -193,6 +208,7 @@ async def handle_kw(arp: Arparma) -> None:
     first_song = songs[0]
     quality = await _resolve_command_quality(
         command_name="kw",
+        render_mode=config.kuwo_track_render_mode,
         requested_quality=arp.all_matched_args.get("quality"),
         default_quality=config.kuwo_default_quality,
         finish=kw.finish,
@@ -225,6 +241,7 @@ async def handle_kwid(arp: Arparma) -> None:
     config = get_runtime_config()
     quality = await _resolve_command_quality(
         command_name="kwid",
+        render_mode=config.kuwo_track_render_mode,
         requested_quality=arp.all_matched_args.get("quality"),
         default_quality=config.kuwo_default_quality,
         finish=kwid.finish,
