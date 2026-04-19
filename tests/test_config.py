@@ -3,12 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
 from nonebot_plugin_kuwo.config import (
     Config,
+    KuwoQuality,
     ListRenderMode,
     TrackRenderMode,
     get_quality_bitrate,
     get_runtime_config,
+    resolve_track_quality,
 )
 
 
@@ -62,3 +66,14 @@ def test_get_runtime_config_uses_image_list_mode_when_track_mode_is_card(monkeyp
 
     assert config.kuwo_list_render_mode is ListRenderMode.IMAGE
     assert config.kuwo_track_render_mode is TrackRenderMode.CARD
+
+
+def test_resolve_track_quality_prefers_requested_quality() -> None:
+    quality = resolve_track_quality(KuwoQuality.STANDARD, "lossless")
+
+    assert quality is KuwoQuality.LOSSLESS
+
+
+def test_resolve_track_quality_raises_on_invalid_quality() -> None:
+    with pytest.raises(ValueError):
+        resolve_track_quality(KuwoQuality.STANDARD, "not-a-quality")

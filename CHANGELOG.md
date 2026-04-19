@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3 - 2026-04-19
+
+- 为 `/kw` 与 `/kwid` 增加 `-q/--quality` 选项，当前已接入 `text` / `card` 输出模式
+- 在 `text` / `card` 模式下，命令行传入的 `-q/--quality` 会覆盖 `KUWO_DEFAULT_QUALITY`
+- 补充 `/kw` 带空格关键词并跟随 `-q/--quality` 的命令解析测试，确保参数不会吞掉关键词
+
 ## 0.1.2 - 2026-04-19
 
 - 为 `/kw` 与 `/kwid` 增加 OneBot V11 自定义音乐卡片输出

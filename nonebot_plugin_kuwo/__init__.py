@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-from arclet.alconna import Alconna, Args, Arparma, MultiVar
+from collections.abc import Awaitable, Callable
+
+from arclet.alconna import Alconna, Args, Arparma, MultiVar, Option
 from nonebot import get_driver, logger, require
 from nonebot.adapters.onebot.v11 import Message
 from nonebot.plugin import PluginMetadata, inherit_supported_adapters
 
-from .config import Config, get_quality_bitrate, get_runtime_config
+from .config import (
+    Config,
+    KuwoQuality,
+    get_quality_bitrate,
+    get_runtime_config,
+    resolve_track_quality,
+)
 from .data_source import (
     KuwoSearchNetworkError,
     KuwoSearchResponseError,
@@ -114,24 +122,47 @@ async def handle_kwsearch(arp: Arparma) -> None:
     await kwsearch.finish(message)
 
 
+async def _resolve_command_quality(
+    *,
+    command_name: str,
+    requested_quality: str | KuwoQuality | None,
+    default_quality: KuwoQuality,
+    finish: Callable[[str | Message], Awaitable[None]],
+) -> KuwoQuality:
+    try:
+        quality = resolve_track_quality(default_quality, requested_quality)
+    except ValueError:
+        await finish("请输入正确的音质参数")
+        raise RuntimeError("invalid quality")
+
+    logger.info(
+        "Resolved track quality: command={}, requested_quality={}, effective_quality={}",
+        command_name,
+        requested_quality if requested_quality else "<default>",
+        quality.value,
+    )
+    return quality
+
+
 async def _fetch_track_message(
     *,
     rid: str,
-    config: Config,
+    render_mode,
+    quality: KuwoQuality,
     song: KuwoSearchSong | None = None,
 ) -> str | Message:
     try:
-        media = await get_song_media(rid, get_quality_bitrate(config.kuwo_default_quality))
+        media = await get_song_media(rid, get_quality_bitrate(quality))
     except KuwoTrackError as exc:
         logger.opt(exception=exc).warning(
             "Kuwo track link request failed: rid={}, quality={}",
             rid,
-            config.kuwo_default_quality.value,
+            quality.value,
         )
         raise
 
     return build_track_message(
-        render_mode=config.kuwo_track_render_mode,
+        render_mode=render_mode,
         rid=rid,
         bitrate=media.bitrate,
         duration=media.duration,
@@ -160,10 +191,17 @@ async def handle_kw(arp: Arparma) -> None:
         await kw.finish("未找到相关歌曲")
 
     first_song = songs[0]
+    quality = await _resolve_command_quality(
+        command_name="kw",
+        requested_quality=arp.all_matched_args.get("quality"),
+        default_quality=config.kuwo_default_quality,
+        finish=kw.finish,
+    )
     try:
         message = await _fetch_track_message(
             rid=first_song.song_id,
-            config=config,
+            render_mode=config.kuwo_track_render_mode,
+            quality=quality,
             song=first_song,
         )
     except KuwoTrackError:
@@ -185,10 +223,16 @@ async def handle_kwid(arp: Arparma) -> None:
         await kwid.finish("请输入正确的音乐ID")
 
     config = get_runtime_config()
+    quality = await _resolve_command_quality(
+        command_name="kwid",
+        requested_quality=arp.all_matched_args.get("quality"),
+        default_quality=config.kuwo_default_quality,
+        finish=kwid.finish,
+    )
     try:
         media = await get_song_detailed_media(
             rid,
-            get_quality_bitrate(config.kuwo_default_quality),
+            get_quality_bitrate(quality),
         )
     except KuwoTrackError:
         await kwid.finish("获取歌曲信息失败")
@@ -230,12 +274,20 @@ def init_plugin() -> None:
         block=True,
     )
     kw = on_alconna(
-        Alconna("kw", Args["keyword", MultiVar(str, "*")]),
+        Alconna(
+            "kw",
+            Option("-q|--quality", Args["quality", str]),
+            Args["keyword", MultiVar(str, "*")],
+        ),
         use_cmd_start=True,
         block=True,
     )
     kwid = on_alconna(
-        Alconna("kwid", Args["rid", str]),
+        Alconna(
+            "kwid",
+            Option("-q|--quality", Args["quality", str]),
+            Args["rid", str],
+        ),
         use_cmd_start=True,
         block=True,
     )

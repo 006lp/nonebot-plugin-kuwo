@@ -165,6 +165,19 @@ async def test_kwsearch_command_returns_image_results(
     assert render_calls["template_path"].startswith("file://")
 
 
+def test_kw_command_parses_quality_option_after_spaced_keyword() -> None:
+    import nonebot_plugin_kuwo
+
+    command = nonebot_plugin_kuwo.kw.command()
+    result = command.parse("/kw Morning Dew Reflection -q lossless")
+
+    assert result.matched is True
+    assert result.all_matched_args == {
+        "keyword": ("Morning", "Dew", "Reflection"),
+        "quality": "lossless",
+    }
+
+
 @pytest.mark.asyncio
 async def test_kw_command_returns_cover_and_text(
     monkeypatch: pytest.MonkeyPatch,
@@ -266,10 +279,10 @@ async def test_kw_command_returns_music_card(
 
     async def fake_get_song_media(rid: str, br: str) -> KuwoTrackResource:
         assert rid == "553152678"
-        assert br == "128kmp3"
+        assert br == "320kmp3"
         return KuwoTrackResource(
             rid=rid,
-            bitrate=128,
+            bitrate=320,
             duration=242,
             direct_url="http://example.com/song.mp3",
             cover_url="http://example.com/cover.jpg",
@@ -302,7 +315,14 @@ async def test_kw_command_returns_music_card(
     )
 
     arp = type(
-        "Arp", (), {"all_matched_args": {"keyword": ("Morning", "Dew", "Reflection")}}
+        "Arp",
+        (),
+        {
+            "all_matched_args": {
+                "keyword": ("Morning", "Dew", "Reflection"),
+                "quality": "exhigh",
+            }
+        },
     )()
 
     with pytest.raises(MatcherFinished):
@@ -390,12 +410,12 @@ async def test_kwid_command_returns_music_card(
         rid: str, br: str
     ) -> KuwoDetailedTrackResource:
         assert rid == "553152678"
-        assert br == "128kmp3"
+        assert br == "2000kflac"
         return KuwoDetailedTrackResource(
             rid=rid,
-            bitrate=128,
+            bitrate=2000,
             duration=182,
-            direct_url="http://example.com/song.mp3",
+            direct_url="http://example.com/song.flac",
             cover_url="http://example.com/album.jpg",
             title="Pocket wo Fukurasete ~Sea, you again~",
             artist="VISUAL ARTS&Key Sounds Label&rionos",
@@ -422,8 +442,8 @@ async def test_kwid_command_returns_music_card(
     expected = Message(
         [
             MessageSegment.music_custom(
-                url="http://example.com/song.mp3",
-                audio="http://example.com/song.mp3",
+                url="http://example.com/song.flac",
+                audio="http://example.com/song.flac",
                 title="Pocket wo Fukurasete ~Sea, you again~",
                 content=(
                     "VISUAL ARTS&Key Sounds Label&rionos | "
@@ -434,7 +454,11 @@ async def test_kwid_command_returns_music_card(
         ]
     )
 
-    arp = type("Arp", (), {"all_matched_args": {"rid": "MUSIC_553152678"}})()
+    arp = type(
+        "Arp",
+        (),
+        {"all_matched_args": {"rid": "MUSIC_553152678", "quality": "lossless"}},
+    )()
 
     with pytest.raises(MatcherFinished):
         await nonebot_plugin_kuwo.handle_kwid(arp)

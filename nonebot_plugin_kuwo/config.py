@@ -144,5 +144,23 @@ def get_runtime_config() -> Config:
     return config
 
 
+def parse_quality(value: str | KuwoQuality | None) -> KuwoQuality | None:
+    if value is None:
+        return None
+    if isinstance(value, KuwoQuality):
+        return value
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+    return KuwoQuality(normalized)
+
+
+def resolve_track_quality(
+    default_quality: KuwoQuality,
+    requested_quality: str | KuwoQuality | None = None,
+) -> KuwoQuality:
+    return parse_quality(requested_quality) or default_quality
+
+
 def get_quality_bitrate(quality: KuwoQuality) -> str:
     return QUALITY_TO_BR[quality]

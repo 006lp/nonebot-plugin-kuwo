@@ -1,24 +1,24 @@
 # nonebot-plugin-kuwo
 
-基于 NoneBot2 的酷我音乐插件，当前已实现搜索、首条直链和按 `rid` 获取歌曲详情，并支持 OneBot V11 自定义音乐卡片输出。
+基于 NoneBot2 的酷我音乐插件，当前已实现搜索、首条直链、按 `rid` 获取歌曲详情，以及 OneBot V11 自定义音乐卡片输出。
 
 ## 当前能力
 
 - 使用 `nonebot-plugin-alconna` 注册 `kwsearch` / `kw搜索`、`kw`、`kwid`
-- 插件入口在顶层先执行 `require("nonebot_plugin_alconna")`
+- 插件入口顶层先执行 `require("nonebot_plugin_alconna")`
 - 命令显式跟随 NoneBot `COMMAND_START`
-- 所有命令均 `block=True`，阻止事件继续传播
+- 所有命令均 `block=True`
 - `kwsearch` 支持文本列表和图片列表
-- `/kw <关键词>` 支持返回首条歌曲的文本直链或自定义音乐卡片
-- `/kwid <rid>` 支持返回歌曲详情的文本直链或自定义音乐卡片
+- `/kw <关键词> [-q|--quality <quality>]` 支持返回首条歌曲的文本直链或自定义音乐卡片
+- `/kwid <rid> [-q|--quality <quality>]` 支持返回歌曲详情的文本直链或自定义音乐卡片
 
 ## 命令
 
 ```text
 /kwsearch <关键词>
 /kw搜索 <关键词>
-/kw <关键词>
-/kwid <rid>
+/kw <关键词> [-q|--quality <quality>]
+/kwid <rid> [-q|--quality <quality>]
 ```
 
 ## 输出说明
@@ -37,11 +37,13 @@
   - `title` 使用歌曲名
   - `content` 使用 `歌手 | 专辑`
   - `image` 使用封面
+- `-q/--quality` 当前对 `text` / `card` 生效；未传时使用 `KUWO_DEFAULT_QUALITY`
 
 ### `/kwid`
 
 - `text` 模式：返回封面 + 歌曲信息 + 直链
 - `card` 模式：返回 OneBot V11 自定义音乐卡片
+- `-q/--quality` 当前对 `text` / `card` 生效；未传时使用 `KUWO_DEFAULT_QUALITY`
 
 ## 配置
 
@@ -63,7 +65,8 @@ KUWO_DEFAULT_QUALITY=standard
   - 可选值：`text`、`image`
 - `KUWO_TRACK_RENDER_MODE`
   - `/kw` 与 `/kwid` 单曲输出模式
-  - 可选值：`text`、`card`
+  - 当前已实现值：`text`、`card`
+  - 规划扩展值：`record`、`file`
 - `KUWO_DEFAULT_QUALITY`
   - 单曲直链默认音质
   - 可选值：`standard`、`exhigh`、`lossless`、`hires`、`hifi`、`sur`、`jymaster`
@@ -92,8 +95,19 @@ uv run pytest tests/ -v
 ## 当前限制
 
 - 暂未实现语音 `record` 发送
+- 暂未实现文件 `file` 消息段发送歌曲
 - 暂未实现官方音乐卡片 / 自定义 CQ 卡片以外的播放形态
 - 暂未实现单用户调用次数限制
+
+## 后续约定
+
+- 后续 `KUWO_TRACK_RENDER_MODE` 将扩展为 `text|card|record|file`
+- `/kw` 与 `/kwid` 当前已经支持 `-q/--quality`
+- 在当前已实现的 `text` / `card` 模式下，`-q/--quality` 会覆盖 `KUWO_DEFAULT_QUALITY`
+- `record` 模式一律强制使用 `standard`
+- 即使用户显式传入 `-q/--quality`，`record` 模式也不会提升音质
+- 这类回落只写入日志和文档，不额外向用户发送提示消息
+- `file` 模式要求发送可直接播放的文件；如果拿到的是 `.mflac`，则需要先结合 `ekey` 解密成 `.flac`
 
 ## 许可证
 
