@@ -35,6 +35,7 @@ def format_track_text(
     bitrate: int,
     duration: int,
     direct_url: str,
+    ekey: str | None = None,
     title: str | None = None,
     artist: str | None = None,
     album: str | None = None,
@@ -52,6 +53,8 @@ def format_track_text(
 
     lines.append(f"时长：{duration}s")
     lines.append(f"码率：{bitrate} kbps")
+    if ekey:
+        lines.append(f"ekey：{ekey}")
     lines.append(f"直链：{direct_url}")
     return "\n".join(lines)
 
@@ -76,11 +79,18 @@ def build_track_message(
     bitrate: int,
     duration: int,
     direct_url: str,
+    ekey: str | None = None,
+    local_file_path: str | None = None,
     cover_url: str | None = None,
     title: str | None = None,
     artist: str | None = None,
     album: str | None = None,
 ) -> str | Message:
+    if render_mode is TrackRenderMode.FILE:
+        if not local_file_path:
+            raise ValueError("local_file_path is required for file mode")
+        return Message([MessageSegment("file", {"file": local_file_path})])
+
     if render_mode is TrackRenderMode.RECORD:
         return Message([MessageSegment.record(direct_url)])
 
@@ -107,6 +117,7 @@ def build_track_message(
         bitrate=bitrate,
         duration=duration,
         direct_url=direct_url,
+        ekey=ekey,
         title=title,
         artist=artist,
         album=album,

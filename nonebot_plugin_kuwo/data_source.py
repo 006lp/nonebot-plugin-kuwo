@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
-from nonebot import logger
+from nonebot import logger, require
 from pydantic import ValidationError
 
 from .models import (
@@ -16,12 +18,15 @@ from .models import (
     KuwoTrackLinkResponse,
     KuwoTrackResource,
 )
+from .qmc import decrypt_mflac_file
 
 SEARCH_API_URL = "http://search.kuwo.cn/r.s"
 TRACK_API_URL = "https://nmobi.kuwo.cn/mobi.s"
 COVER_API_URL = "http://artistpicserver.kuwo.cn/pic.web"
 DETAIL_API_URL = "http://musicpay.kuwo.cn/music.pay"
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+SUPPORTED_TRACK_FILE_FORMATS = {"mp3", "flac", "aac", "ogg", "wav"}
+TRACK_CACHE_PLUGIN_NAME = "nonebot_plugin_kuwo"
 
 _client: httpx.AsyncClient | None = None
 _client_lock = asyncio.Lock()
@@ -49,6 +54,10 @@ class KuwoTrackNetworkError(KuwoTrackError):
 
 class KuwoTrackResponseError(KuwoTrackError):
     """Raised when the remote track response cannot be parsed."""
+
+
+class KuwoUnsupportedFormatError(KuwoTrackError):
+    """Raised when the track format cannot be sent as a playable file yet."""
 
 
 async def get_http_client() -> httpx.AsyncClient:
@@ -127,6 +136,8 @@ async def get_song_media(rid: str, br: str) -> KuwoTrackResource:
     )
     return KuwoTrackResource(
         rid=rid,
+        format=track_data.format,
+        ekey=track_data.ekey,
         bitrate=track_data.bitrate,
         duration=track_data.duration,
         direct_url=track_data.direct_url,
@@ -141,6 +152,8 @@ async def get_song_detailed_media(rid: str, br: str) -> KuwoDetailedTrackResourc
     )
     return KuwoDetailedTrackResource(
         rid=rid,
+        format=track_data.format,
+        ekey=track_data.ekey,
         bitrate=track_data.bitrate,
         duration=track_data.duration,
         direct_url=track_data.direct_url,
@@ -231,3 +244,109 @@ async def get_song_cover(rid: str) -> str | None:
 
     cover_url = response.text.strip().strip('"')
     return cover_url or None
+
+
+def _get_track_file_cache_dir() -> Path:
+    require("nonebot_plugin_localstore")
+
+    import nonebot_plugin_localstore as store
+
+    cache_dir = store.get_cache_dir(TRACK_CACHE_PLUGIN_NAME) / "tracks"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def resolve_track_file_extension(direct_url: str, format_name: str) -> str:
+    extension = Path(urlparse(direct_url).path).suffix.lstrip(".").lower()
+    if extension:
+        return extension
+    return format_name.strip().lower()
+
+
+async def _download_file_to_path(direct_url: str, file_path: Path) -> Path:
+    client = await get_http_client()
+    try:
+        async with client.stream("GET", direct_url) as response:
+            response.raise_for_status()
+            with file_path.open("wb") as file:
+                async for chunk in response.aiter_bytes():
+                    file.write(chunk)
+    except httpx.HTTPError as exc:
+        if file_path.exists():
+            file_path.unlink(missing_ok=True)
+        raise KuwoTrackNetworkError("track file download failed") from exc
+    except OSError as exc:
+        if file_path.exists():
+            file_path.unlink(missing_ok=True)
+        raise KuwoTrackResponseError("track file write failed") from exc
+
+    if file_path.stat().st_size <= 0:
+        file_path.unlink(missing_ok=True)
+        raise KuwoTrackResponseError("track file download is empty")
+    return file_path
+
+
+async def download_track_file(
+    rid: str,
+    direct_url: str,
+    format_name: str,
+    bitrate: int,
+    ekey: str | None = None,
+) -> Path:
+    extension = resolve_track_file_extension(direct_url, format_name)
+    track_file_cache_dir = _get_track_file_cache_dir()
+
+    if extension == "mflac":
+        if not ekey:
+            raise KuwoTrackResponseError("track file ekey is missing")
+
+        encrypted_path = (track_file_cache_dir / f"{rid}_{bitrate}.mflac").resolve()
+        decrypted_path = (track_file_cache_dir / f"{rid}_{bitrate}.flac").resolve()
+        if decrypted_path.is_file() and decrypted_path.stat().st_size > 0:
+            logger.info(
+                "Reusing cached decrypted kuwo track file: rid={}, path={}",
+                rid,
+                str(decrypted_path),
+            )
+            return decrypted_path
+
+        if not encrypted_path.is_file() or encrypted_path.stat().st_size <= 0:
+            logger.info(
+                "Downloading encrypted kuwo track file: rid={}, format={}, path={}",
+                rid,
+                extension,
+                str(encrypted_path),
+            )
+            await _download_file_to_path(direct_url, encrypted_path)
+
+        try:
+            decrypt_mflac_file(encrypted_path, decrypted_path, ekey)
+        except (OSError, ValueError) as exc:
+            if decrypted_path.exists():
+                decrypted_path.unlink(missing_ok=True)
+            raise KuwoTrackResponseError("track file decrypt failed") from exc
+
+        if decrypted_path.stat().st_size <= 0:
+            decrypted_path.unlink(missing_ok=True)
+            raise KuwoTrackResponseError("track file decrypt is empty")
+        return decrypted_path
+
+    if extension not in SUPPORTED_TRACK_FILE_FORMATS:
+        raise KuwoUnsupportedFormatError(f"unsupported track format: {extension}")
+
+    file_path = (track_file_cache_dir / f"{rid}_{bitrate}.{extension}").resolve()
+    if file_path.is_file() and file_path.stat().st_size > 0:
+        logger.info(
+            "Reusing cached kuwo track file: rid={}, path={}",
+            rid,
+            str(file_path),
+        )
+        return file_path
+
+    logger.info(
+        "Downloading kuwo track file: rid={}, format={}, path={}",
+        rid,
+        extension,
+        str(file_path),
+    )
+    return await _download_file_to_path(direct_url, file_path)

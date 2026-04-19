@@ -1,18 +1,21 @@
 # nonebot-plugin-kuwo
 
-基于 NoneBot2 的酷我音乐插件，当前已实现搜索、首条直链、按 `rid` 获取歌曲详情，以及 OneBot V11 自定义音乐卡片输出。
+基于 NoneBot2 的酷我音乐插件，当前已实现搜索列表、首条歌曲直链、按 `rid` 查询详情，以及面向 NapCat / OneBot V11 的多种消息输出。
 
 ## 当前能力
 
-- 使用 `nonebot-plugin-alconna` 注册 `kwsearch` / `kw搜索`、`kw`、`kwid`
-- 插件入口顶层先执行 `require("nonebot_plugin_alconna")`
-- 命令显式跟随 NoneBot `COMMAND_START`
-- 所有命令均 `block=True`
-- `kwsearch` 支持文本列表和图片列表
-- `/kw <关键词> [-q|--quality <quality>]` 支持返回首条歌曲的文本直链、自定义音乐卡片或语音
-- `/kwid <rid> [-q|--quality <quality>]` 支持返回歌曲详情的文本直链、自定义音乐卡片或语音
+- 命令：`kwsearch` / `kw搜索` / `kw` / `kwid`
+- 命令解析：`nonebot-plugin-alconna`
+- 搜索列表输出：`text` / `image`
+- 单曲输出：`text` / `card` / `record` / `file`
+- 直链请求：`https://nmobi.kuwo.cn/mobi.s`
+- 详情请求：`http://musicpay.kuwo.cn/music.pay`
+- 文件缓存：`nonebot-plugin-localstore`
+- `.mflac` 文件解密：兼容 Kuwo `ekey` + QMCv2 流程，落地为可播放的 `.flac`
 
 ## 命令
+
+命令前缀跟随 NoneBot2 的 `COMMAND_START`。下面示例默认使用 `/`。
 
 ```text
 /kwsearch <关键词>
@@ -21,31 +24,39 @@
 /kwid <rid> [-q|--quality <quality>]
 ```
 
-## 输出说明
+补充说明：
+
+- `kwsearch` 只返回搜索列表，不进入多轮会话。
+- `kw` 只取搜索结果的第一首歌。
+- `kwid` 支持 `123456` 和 `MUSIC_123456` 两种输入。
+- 所有命令均显式启用 `use_cmd_start=True` 和 `block=True`。
+
+## 输出模式
 
 ### `kwsearch`
 
-- `text` 模式：返回 `序号. 音乐id 歌曲名-歌手`
-- `image` 模式：返回带封面的图片列表
+- `text`
+  - 返回格式：`序号. 音乐id 歌曲名-歌手`
+- `image`
+  - 使用 `nonebot-plugin-htmlrender` 渲染图片列表
+  - 直接复用搜索接口返回的 `web_albumpic_short` 拼接封面
+  - 如果渲染失败，会回退到文本模式
 
-### `/kw`
+### `kw` / `kwid`
 
-- `text` 模式：返回封面 + 歌曲信息 + 直链
-- `card` 模式：返回 OneBot V11 自定义音乐卡片
-  - `url` 使用音乐直链
-  - `audio` 使用音乐直链
-  - `title` 使用歌曲名
-  - `content` 使用 `歌手 | 专辑`
-  - `image` 使用封面
-- `record` 模式：返回 OneBot V11 `record` 消息段
-- `-q/--quality` 当前对 `text` / `card` 生效；`record` 模式下会强制回落到 `standard`
-
-### `/kwid`
-
-- `text` 模式：返回封面 + 歌曲信息 + 直链
-- `card` 模式：返回 OneBot V11 自定义音乐卡片
-- `record` 模式：返回 OneBot V11 `record` 消息段
-- `-q/--quality` 当前对 `text` / `card` 生效；`record` 模式下会强制回落到 `standard`
+- `text`
+  - 如果有封面，发送 `image + text`
+  - 文本包含：歌名、歌手、专辑、时长、码率、直链
+  - 如果直链接口返回了 `ekey`，会一并显示
+- `card`
+  - 发送 OneBot V11 自定义音乐卡片
+  - `url` 和 `audio` 都使用音乐直链，方便桌面端直接下载
+- `record`
+  - 发送 OneBot V11 `record` 消息段
+  - 使用音乐直链，不走本地下载
+- `file`
+  - 将可播放文件下载到本地缓存目录后发送 OneBot V11 `file` 消息段
+  - 如果源格式是 `.mflac`，会先本地解密成 `.flac`
 
 ## 配置
 
@@ -58,32 +69,53 @@ KUWO_TRACK_RENDER_MODE=text
 KUWO_DEFAULT_QUALITY=standard
 ```
 
-### 配置项说明
+### 配置项
 
 - `KUWO_SEARCH_LIMIT`
-  - 搜索结果数量，默认 `5`
+  - 搜索结果条数，默认 `5`
+  - 当前限制范围是 `1-10`
 - `KUWO_LIST_RENDER_MODE`
-  - `kwsearch` 列表渲染模式
-  - 可选值：`text`、`image`
+  - 搜索列表渲染模式：`text` / `image`
 - `KUWO_TRACK_RENDER_MODE`
-  - `/kw` 与 `/kwid` 单曲输出模式
-  - 当前已实现值：`text`、`card`、`record`
-  - 规划扩展值：`file`
+  - 单曲输出模式：`text` / `card` / `record` / `file`
 - `KUWO_DEFAULT_QUALITY`
-  - 单曲直链默认音质
-  - 可选值：`standard`、`exhigh`、`lossless`、`hires`、`hifi`、`sur`、`jymaster`
+  - 默认音质：`standard` / `exhigh` / `lossless` / `hires` / `hifi` / `sur` / `jymaster`
 
-### 默认联动规则
+### 配置读取规则
 
-- 如果没有显式配置 `KUWO_LIST_RENDER_MODE`
-- 且 `KUWO_TRACK_RENDER_MODE=card`
-- 那么 `kwsearch` 默认使用 `image`
+- 每次命令执行时重新读取 `.env`
+- 如果设置了 `ENVIRONMENT`，也会叠加读取 `.env.{ENVIRONMENT}`
+- 进程环境变量优先级高于 `.env`
+- 如果未显式设置 `KUWO_LIST_RENDER_MODE`，且 `KUWO_TRACK_RENDER_MODE=card`，则 `kwsearch` 默认使用 `image`
 
-## 图片列表封面策略
+## 音质规则
 
-- `kwsearch` 图片模式不会为每一首歌额外请求封面接口
-- 直接复用搜索接口返回的 `web_albumpic_short`
-- 完整封面地址通过 `http://img1.kwcdn.kuwo.cn/star/albumcover/` 拼接得到
+- `/kw` 和 `/kwid` 都支持 `-q/--quality`
+- 未传 `-q/--quality` 时，使用 `KUWO_DEFAULT_QUALITY`
+- `text` / `file` 模式按最终解析出的音质请求远程接口
+- `card` 模式支持 `-q/--quality`，但最终上限固定为 `lossless`
+- `record` 模式无论默认值还是显式传参，都会强制回落到 `standard`
+- `record` / `card` 的音质回落只记录到日志，不额外给用户发送提示消息
+
+## `file` 模式与 `.mflac`
+
+- 普通可播放格式目前支持：`mp3` / `flac` / `aac` / `ogg` / `wav`
+- 文件缓存目录来自 `nonebot-plugin-localstore` 的插件缓存目录，子目录为 `tracks/`
+- 相同 `rid + bitrate` 会优先复用已缓存文件
+
+`.mflac` 处理流程：
+
+1. 下载原始 `.mflac`
+2. 使用 Kuwo 返回的 `ekey`
+3. 兼容 Kuwo `kuwodes` 解密流程，提取 QMC 原始密钥
+4. 推导最终 QMC 密钥
+5. 本地解密为可播放的 `.flac`
+6. 发送解密后的 `file` 消息段
+
+补充说明：
+
+- `.mflac` 解密当前是纯 Python 实现，处理大文件时会比较慢
+- 现阶段没有做并行解密优化，因为这是典型 CPU 密集任务，普通多线程收益很有限
 
 ## 开发命令
 
@@ -96,20 +128,16 @@ uv run pytest tests/ -v
 
 ## 当前限制
 
-- 暂未实现文件 `file` 消息段发送歌曲
-- 暂未实现官方音乐卡片 / 自定义 CQ 卡片以外的播放形态
-- 暂未实现单用户调用次数限制
+- 暂未实现单用户调用频率限制
+- 暂未实现文件缓存清理策略
 
-## 后续约定
+## 后续计划
 
-- 后续 `KUWO_TRACK_RENDER_MODE` 将扩展为 `text|card|record|file`
-- `/kw` 与 `/kwid` 当前已经支持 `-q/--quality`
-- 在当前已实现的 `text` / `card` 模式下，`-q/--quality` 会覆盖 `KUWO_DEFAULT_QUALITY`
-- `record` 模式一律强制使用 `standard`
-- 即使用户显式传入 `-q/--quality`，`record` 模式也不会提升音质
-- 这类回落只写入日志和文档，不额外向用户发送提示消息
-- `file` 模式要求发送可直接播放的文件；如果拿到的是 `.mflac`，则需要先结合 `ekey` 解密成 `.flac`
+- 评估 `file` 模式缓存生命周期与清理策略
+- 评估是否要为 `.mflac` 解密引入更高性能的原生实现
+- 评估 `file` 模式未来是否扩展为“上传可播放文件”的能力
+- 补齐真实 NapCat 环境下的端到端验证
 
 ## 许可证
 
-本项目采用 AGPL v3 许可证，详见 [LICENSE](./LICENSE)。
+本项目采用 AGPL v3，详见 [LICENSE](./LICENSE)。

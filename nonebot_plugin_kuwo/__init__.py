@@ -19,13 +19,15 @@ from .data_source import (
     KuwoSearchNetworkError,
     KuwoSearchResponseError,
     KuwoTrackError,
+    KuwoUnsupportedFormatError,
     close_http_client,
+    download_track_file,
     get_song_detailed_media,
     get_song_media,
     initialize_http_client,
     search_songs,
 )
-from .models import KuwoSearchSong
+from .models import KuwoDetailedTrackResource, KuwoSearchSong, KuwoTrackResource
 from .render import render_search_results
 from .utils import build_track_message, join_keyword_parts, normalize_musicrid
 
@@ -45,6 +47,15 @@ kwsearch = None
 kw = None
 kwid = None
 _plugin_initialized = False
+_QUALITY_ORDER = {
+    KuwoQuality.STANDARD: 0,
+    KuwoQuality.EXHIGH: 1,
+    KuwoQuality.LOSSLESS: 2,
+    KuwoQuality.HIRES: 3,
+    KuwoQuality.HIFI: 4,
+    KuwoQuality.SUR: 5,
+    KuwoQuality.JYMASTER: 6,
+}
 
 
 async def _search_song_candidates(keyword: str, limit: int) -> list[KuwoSearchSong]:
@@ -150,6 +161,22 @@ async def _resolve_command_quality(
         )
         return KuwoQuality.STANDARD
 
+    if (
+        render_mode is TrackRenderMode.CARD
+        and _QUALITY_ORDER[quality] > _QUALITY_ORDER[KuwoQuality.LOSSLESS]
+    ):
+        logger.info(
+            (
+                "Card mode caps quality to lossless: command={}, "
+                "requested_quality={}, default_quality={}, effective_quality={}"
+            ),
+            command_name,
+            requested_quality if requested_quality else "<default>",
+            default_quality.value,
+            KuwoQuality.LOSSLESS.value,
+        )
+        return KuwoQuality.LOSSLESS
+
     logger.info(
         "Resolved track quality: command={}, requested_quality={}, effective_quality={}",
         command_name,
@@ -162,7 +189,7 @@ async def _resolve_command_quality(
 async def _fetch_track_message(
     *,
     rid: str,
-    render_mode,
+    render_mode: TrackRenderMode,
     quality: KuwoQuality,
     song: KuwoSearchSong | None = None,
 ) -> str | Message:
@@ -176,17 +203,60 @@ async def _fetch_track_message(
         )
         raise
 
+    return await _build_track_message(
+        render_mode=render_mode,
+        media=media,
+        rid=rid,
+        title=song.name if song else None,
+        artist=song.artist if song else None,
+        album=song.album if song else None,
+    )
+
+
+async def _build_track_message(
+    *,
+    render_mode: TrackRenderMode,
+    media: KuwoTrackResource | KuwoDetailedTrackResource,
+    rid: str,
+    title: str | None = None,
+    artist: str | None = None,
+    album: str | None = None,
+) -> str | Message:
+    local_file_path: str | None = None
+    if render_mode is TrackRenderMode.FILE:
+        local_file_path = str(
+            await download_track_file(
+                rid=rid,
+                direct_url=media.direct_url,
+                format_name=media.format,
+                bitrate=media.bitrate,
+                ekey=media.ekey,
+            )
+        )
+
     return build_track_message(
         render_mode=render_mode,
         rid=rid,
         bitrate=media.bitrate,
         duration=media.duration,
         direct_url=media.direct_url,
+        ekey=media.ekey,
+        local_file_path=local_file_path,
         cover_url=media.cover_url,
-        title=song.name if song else None,
-        artist=song.artist if song else None,
-        album=song.album if song else None,
+        title=title,
+        artist=artist,
+        album=album,
     )
+
+
+def _resolve_track_failure_message(
+    render_mode: TrackRenderMode,
+    *,
+    default_message: str,
+) -> str:
+    if render_mode is TrackRenderMode.FILE:
+        return "下载歌曲文件失败"
+    return default_message
 
 
 async def handle_kw(arp: Arparma) -> None:
@@ -220,8 +290,15 @@ async def handle_kw(arp: Arparma) -> None:
             quality=quality,
             song=first_song,
         )
+    except KuwoUnsupportedFormatError:
+        await kw.finish("当前暂不支持该歌曲的文件发送")
     except KuwoTrackError:
-        await kw.finish("获取播放链接失败")
+        await kw.finish(
+            _resolve_track_failure_message(
+                config.kuwo_track_render_mode,
+                default_message="获取播放链接失败",
+            )
+        )
     await kw.finish(message)
 
 
@@ -251,19 +328,23 @@ async def handle_kwid(arp: Arparma) -> None:
             rid,
             get_quality_bitrate(quality),
         )
+        message = await _build_track_message(
+            render_mode=config.kuwo_track_render_mode,
+            media=media,
+            rid=rid,
+            title=media.title,
+            artist=media.artist,
+            album=media.album,
+        )
+    except KuwoUnsupportedFormatError:
+        await kwid.finish("当前暂不支持该歌曲的文件发送")
     except KuwoTrackError:
-        await kwid.finish("获取歌曲信息失败")
-    message = build_track_message(
-        render_mode=config.kuwo_track_render_mode,
-        rid=rid,
-        bitrate=media.bitrate,
-        duration=media.duration,
-        direct_url=media.direct_url,
-        cover_url=media.cover_url,
-        title=media.title,
-        artist=media.artist,
-        album=media.album,
-    )
+        await kwid.finish(
+            _resolve_track_failure_message(
+                config.kuwo_track_render_mode,
+                default_message="获取歌曲信息失败",
+            )
+        )
     await kwid.finish(message)
 
 
@@ -275,6 +356,7 @@ def init_plugin() -> None:
     from nonebot_plugin_alconna import on_alconna
 
     driver = get_driver()
+    require("nonebot_plugin_localstore")
 
     @driver.on_startup
     async def _startup() -> None:

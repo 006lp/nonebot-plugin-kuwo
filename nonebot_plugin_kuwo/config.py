@@ -21,6 +21,7 @@ class TrackRenderMode(str, Enum):
     TEXT = "text"
     CARD = "card"
     RECORD = "record"
+    FILE = "file"
 
 
 class KuwoQuality(str, Enum):

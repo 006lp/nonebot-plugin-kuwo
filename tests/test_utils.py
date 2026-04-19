@@ -38,6 +38,7 @@ def test_format_track_text() -> None:
         album="Morning Dew Reflection",
         duration=242,
         bitrate=2000,
+        ekey="sample-ekey",
         direct_url="http://example.com/song.flac",
     )
 
@@ -46,5 +47,6 @@ def test_format_track_text() -> None:
         "专辑：Morning Dew Reflection\n"
         "时长：242s\n"
         "码率：2000 kbps\n"
+        "ekey：sample-ekey\n"
         "直链：http://example.com/song.flac"
     )

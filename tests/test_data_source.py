@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+from uuid import uuid4
+
 import httpx
 import pytest
 import respx
@@ -10,9 +13,12 @@ from nonebot_plugin_kuwo.data_source import (
     SEARCH_API_URL,
     TRACK_API_URL,
     KuwoSearchResponseError,
+    KuwoTrackResponseError,
     close_http_client,
+    download_track_file,
     get_song_detailed_media,
     get_song_media,
+    resolve_track_file_extension,
     search_songs,
 )
 
@@ -60,6 +66,12 @@ DETAIL_RESPONSE = {
 }
 
 
+def make_workspace_tmp_path(name: str) -> Path:
+    tmp_path = (Path("tests") / ".tmp" / f"{name}_{uuid4().hex}").resolve()
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    return tmp_path
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_search_songs_success() -> None:
@@ -101,6 +113,7 @@ async def test_get_song_media_returns_direct_url_and_cover() -> None:
     media = await get_song_media("11713652", "2000kflac")
 
     assert media.rid == "11713652"
+    assert media.format == "flac"
     assert media.bitrate == 2000
     assert media.duration == 242
     assert media.direct_url == "http://example.com/song.flac"
@@ -120,6 +133,7 @@ async def test_get_song_detailed_media_returns_track_detail() -> None:
     media = await get_song_detailed_media("320490745", "2000kflac")
 
     assert media.rid == "320490745"
+    assert media.format == "flac"
     assert media.bitrate == 2000
     assert media.duration == 242
     assert media.direct_url == "http://example.com/song.flac"
@@ -129,3 +143,107 @@ async def test_get_song_detailed_media_returns_track_detail() -> None:
     assert media.cover_url == "http://example.com/album.jpg"
 
     await close_http_client()
+
+
+def test_resolve_track_file_extension_prefers_url_suffix() -> None:
+    assert (
+        resolve_track_file_extension(
+            "http://example.com/track/F000003qKlqV1PVMB8.flac",
+            "mflac",
+        )
+        == "flac"
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_download_track_file_success(monkeypatch) -> None:
+    tmp_path = make_workspace_tmp_path("download_track_file_success")
+    monkeypatch.setattr(
+        "nonebot_plugin_kuwo.data_source._get_track_file_cache_dir",
+        lambda: tmp_path,
+    )
+    route = respx.get("http://example.com/song.flac").mock(
+        return_value=httpx.Response(200, content=b"flac-bytes")
+    )
+
+    file_path = await download_track_file(
+        "553152678",
+        "http://example.com/song.flac",
+        "flac",
+        2000,
+    )
+
+    assert route.called
+    assert file_path == (tmp_path / "553152678_2000.flac").resolve()
+    assert file_path.read_bytes() == b"flac-bytes"
+
+    await close_http_client()
+
+
+@pytest.mark.asyncio
+async def test_download_track_file_decrypts_mflac_to_flac(
+    monkeypatch,
+) -> None:
+    tmp_path = make_workspace_tmp_path("download_track_file_decrypts_mflac")
+    monkeypatch.setattr(
+        "nonebot_plugin_kuwo.data_source._get_track_file_cache_dir",
+        lambda: tmp_path,
+    )
+
+    async def fake_download_file_to_path(direct_url: str, file_path):
+        assert direct_url == "http://example.com/song.mflac"
+        file_path.write_bytes(b"encrypted-mflac")
+        return file_path
+
+    def fake_decrypt_mflac_file(
+        source_path,
+        target_path,
+        ekey: str,
+        chunk_size: int = 65536,
+    ):
+        assert source_path == (tmp_path / "553152678_20201.mflac").resolve()
+        assert target_path == (tmp_path / "553152678_20201.flac").resolve()
+        assert ekey == "test-ekey"
+        assert chunk_size == 65536
+        target_path.write_bytes(b"fLaCdecoded")
+        return target_path
+
+    monkeypatch.setattr(
+        "nonebot_plugin_kuwo.data_source._download_file_to_path",
+        fake_download_file_to_path,
+    )
+    monkeypatch.setattr(
+        "nonebot_plugin_kuwo.data_source.decrypt_mflac_file",
+        fake_decrypt_mflac_file,
+    )
+
+    file_path = await download_track_file(
+        "553152678",
+        "http://example.com/song.mflac",
+        "mflac",
+        20201,
+        ekey="test-ekey",
+    )
+
+    assert file_path == (tmp_path / "553152678_20201.flac").resolve()
+    assert file_path.read_bytes() == b"fLaCdecoded"
+
+
+@pytest.mark.asyncio
+async def test_download_track_file_raises_when_mflac_ekey_missing(
+    monkeypatch,
+) -> None:
+    tmp_path = make_workspace_tmp_path("download_track_file_raises_when_mflac_ekey_missing")
+    monkeypatch.setattr(
+        "nonebot_plugin_kuwo.data_source._get_track_file_cache_dir",
+        lambda: tmp_path,
+    )
+
+    with pytest.raises(KuwoTrackResponseError, match="ekey is missing"):
+        await download_track_file(
+            "553152678",
+            "http://example.com/song.mflac",
+            "mflac",
+            20201,
+        )

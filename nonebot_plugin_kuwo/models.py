@@ -58,6 +58,7 @@ class KuwoTrackLinkData(BaseModel):
     bitrate: int = Field(alias="bitrate")
     duration: int = Field(alias="duration")
     format: str = Field(alias="format")
+    ekey: str | None = Field(alias="ekey", default=None)
     rid: int = Field(alias="rid")
     url: str = Field(alias="url")
 
@@ -125,6 +126,8 @@ class KuwoTrackResource(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     rid: str
+    format: str
+    ekey: str | None = None
     bitrate: int
     duration: int
     direct_url: str
