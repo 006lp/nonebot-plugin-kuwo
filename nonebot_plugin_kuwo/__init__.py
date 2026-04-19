@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from arclet.alconna import Alconna, Args, Arparma, MultiVar
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot import get_driver, logger, require
+from nonebot.adapters.onebot.v11 import Message
 from nonebot.plugin import PluginMetadata, inherit_supported_adapters
 
 from .config import Config, get_quality_bitrate, get_runtime_config
@@ -18,9 +18,9 @@ from .data_source import (
 )
 from .models import KuwoSearchSong
 from .render import render_search_results
-from .utils import format_track_text, join_keyword_parts, normalize_musicrid
+from .utils import build_track_message, join_keyword_parts, normalize_musicrid
 
-require("nonebot_plugin_alconna")  # 必须先 require 才能被 inherit_supported_adapters 处理
+require("nonebot_plugin_alconna")
 
 __plugin_meta__ = PluginMetadata(
     name="酷我音乐",
@@ -45,12 +45,15 @@ async def _search_song_candidates(keyword: str, limit: int) -> list[KuwoSearchSo
     try:
         return await search_songs(keyword, limit)
     except KuwoSearchNetworkError as exc:
-        logger.opt(exception=exc).warning("酷我搜索请求失败: keyword={}", keyword)
+        logger.opt(exception=exc).warning("Kuwo search request failed: keyword={}", keyword)
         if kwsearch is not None:
             await kwsearch.finish("搜索服务暂时不可用，请稍后再试")
         raise
     except KuwoSearchResponseError as exc:
-        logger.opt(exception=exc).warning("酷我搜索结果解析失败: keyword={}", keyword)
+        logger.opt(exception=exc).warning(
+            "Kuwo search response parsing failed: keyword={}",
+            keyword,
+        )
         if kwsearch is not None:
             await kwsearch.finish("搜索结果解析失败")
         raise
@@ -78,7 +81,7 @@ async def handle_kwsearch(arp: Arparma) -> None:
         "Received kwsearch command: keyword={}, limit={}, render_mode={}",
         keyword,
         config.kuwo_search_limit,
-        config.kuwo_search_render_mode.value,
+        config.kuwo_list_render_mode.value,
     )
     songs = await _search_song_candidates_by_parts(
         arp.all_matched_args.get("keyword", ()),
@@ -89,7 +92,7 @@ async def handle_kwsearch(arp: Arparma) -> None:
     if not songs:
         await kwsearch.finish("未找到相关歌曲")
 
-    message = await render_search_results(songs, config.kuwo_search_render_mode)
+    message = await render_search_results(songs, config.kuwo_list_render_mode)
     logger.debug(
         "kwsearch render completed: keyword={}, message_type={}, segment_count={}",
         keyword,
@@ -103,19 +106,12 @@ async def handle_kwsearch(arp: Arparma) -> None:
             message[0].type if message else "unknown",
             message[0].data.get("file", "")[:32] if message else "",
         )
-    logger.info("Sending kwsearch response: keyword={}, render_mode={}", keyword, config.kuwo_search_render_mode.value)
-    await kwsearch.finish(message)
-
-
-def _build_track_message(text: str, cover_url: str | None) -> str | Message:
-    if not cover_url:
-        return text
-    return Message(
-        [
-            MessageSegment.image(cover_url),
-            MessageSegment.text(f"\n{text}"),
-        ]
+    logger.info(
+        "Sending kwsearch response: keyword={}, render_mode={}",
+        keyword,
+        config.kuwo_list_render_mode.value,
     )
+    await kwsearch.finish(message)
 
 
 async def _fetch_track_message(
@@ -125,27 +121,26 @@ async def _fetch_track_message(
     song: KuwoSearchSong | None = None,
 ) -> str | Message:
     try:
-        media = await get_song_media(
-            rid, get_quality_bitrate(config.kuwo_default_quality)
-        )
+        media = await get_song_media(rid, get_quality_bitrate(config.kuwo_default_quality))
     except KuwoTrackError as exc:
         logger.opt(exception=exc).warning(
-            "酷我直链获取失败: rid={}, quality={}",
+            "Kuwo track link request failed: rid={}, quality={}",
             rid,
             config.kuwo_default_quality.value,
         )
         raise
 
-    text = format_track_text(
+    return build_track_message(
+        render_mode=config.kuwo_track_render_mode,
         rid=rid,
         bitrate=media.bitrate,
         duration=media.duration,
         direct_url=media.direct_url,
+        cover_url=media.cover_url,
         title=song.name if song else None,
         artist=song.artist if song else None,
         album=song.album if song else None,
     )
-    return _build_track_message(text, media.cover_url)
 
 
 async def handle_kw(arp: Arparma) -> None:
@@ -197,17 +192,16 @@ async def handle_kwid(arp: Arparma) -> None:
         )
     except KuwoTrackError:
         await kwid.finish("获取歌曲信息失败")
-    message = _build_track_message(
-        format_track_text(
-            rid=rid,
-            bitrate=media.bitrate,
-            duration=media.duration,
-            direct_url=media.direct_url,
-            title=media.title,
-            artist=media.artist,
-            album=media.album,
-        ),
-        media.cover_url,
+    message = build_track_message(
+        render_mode=config.kuwo_track_render_mode,
+        rid=rid,
+        bitrate=media.bitrate,
+        duration=media.duration,
+        direct_url=media.direct_url,
+        cover_url=media.cover_url,
+        title=media.title,
+        artist=media.artist,
+        album=media.album,
     )
     await kwid.finish(message)
 

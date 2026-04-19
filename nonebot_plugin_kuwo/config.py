@@ -12,9 +12,14 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-class SearchRenderMode(str, Enum):
+class ListRenderMode(str, Enum):
     TEXT = "text"
     IMAGE = "image"
+
+
+class TrackRenderMode(str, Enum):
+    TEXT = "text"
+    CARD = "card"
 
 
 class KuwoQuality(str, Enum):
@@ -42,20 +47,33 @@ class Config(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     kuwo_search_limit: int = Field(default=5, alias="KUWO_SEARCH_LIMIT", ge=1, le=10)
-    kuwo_search_render_mode: SearchRenderMode = Field(
-        default=SearchRenderMode.TEXT,
-        alias="KUWO_SEARCH_RENDER_MODE",
+    kuwo_list_render_mode: ListRenderMode = Field(
+        default=ListRenderMode.TEXT,
+        alias="KUWO_LIST_RENDER_MODE",
+    )
+    kuwo_track_render_mode: TrackRenderMode = Field(
+        default=TrackRenderMode.TEXT,
+        alias="KUWO_TRACK_RENDER_MODE",
     )
     kuwo_default_quality: KuwoQuality = Field(
         default=KuwoQuality.STANDARD,
         alias="KUWO_DEFAULT_QUALITY",
     )
 
-    @field_validator("kuwo_search_render_mode", mode="before")
+    @field_validator("kuwo_list_render_mode", mode="before")
     @classmethod
-    def normalize_render_mode(
-        cls, value: SearchRenderMode | str
-    ) -> SearchRenderMode | str:
+    def normalize_list_render_mode(
+        cls, value: ListRenderMode | str
+    ) -> ListRenderMode | str:
+        if isinstance(value, str):
+            return value.lower()
+        return value
+
+    @field_validator("kuwo_track_render_mode", mode="before")
+    @classmethod
+    def normalize_track_render_mode(
+        cls, value: TrackRenderMode | str
+    ) -> TrackRenderMode | str:
         if isinstance(value, str):
             return value.lower()
         return value
@@ -87,7 +105,8 @@ def _load_dotenv_values() -> dict[str, str]:
 def _load_system_env_values() -> dict[str, str]:
     keys = {
         "KUWO_SEARCH_LIMIT",
-        "KUWO_SEARCH_RENDER_MODE",
+        "KUWO_LIST_RENDER_MODE",
+        "KUWO_TRACK_RENDER_MODE",
         "KUWO_DEFAULT_QUALITY",
     }
     return {key: os.environ[key] for key in keys if key in os.environ}
@@ -98,16 +117,31 @@ def _base_config_data() -> dict[str, Any]:
 
 
 def get_runtime_config() -> Config:
+    dotenv_env = _load_dotenv_values()
+    system_env = _load_system_env_values()
     data = {
         **_base_config_data(),
-        **_load_dotenv_values(),
-        **_load_system_env_values(),
+        **dotenv_env,
+        **system_env,
     }
     try:
-        return Config.model_validate(data)
+        config = Config.model_validate(data)
     except ValidationError as exc:
-        logger.opt(exception=exc).warning("酷我插件配置解析失败，已回退到当前运行配置")
+        logger.opt(exception=exc).warning(
+            "Kuwo plugin config validation failed, falling back to plugin config."
+        )
         return get_plugin_config(Config)
+
+    list_render_mode_is_explicit = any(
+        key in dotenv_env or key in system_env
+        for key in ("KUWO_LIST_RENDER_MODE",)
+    )
+    if (
+        not list_render_mode_is_explicit
+        and config.kuwo_track_render_mode is TrackRenderMode.CARD
+    ):
+        return config.model_copy(update={"kuwo_list_render_mode": ListRenderMode.IMAGE})
+    return config
 
 
 def get_quality_bitrate(quality: KuwoQuality) -> str:

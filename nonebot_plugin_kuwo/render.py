@@ -7,7 +7,7 @@ from pathlib import Path
 from nonebot import logger, require
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
-from .config import SearchRenderMode
+from .config import ListRenderMode
 from .models import KuwoSearchSong
 from .utils import format_search_result_line
 
@@ -290,14 +290,14 @@ async def _render_search_results_image(songs: Sequence[KuwoSearchSong]) -> Messa
 
 async def render_search_results(
     songs: Sequence[KuwoSearchSong],
-    mode: SearchRenderMode,
+    mode: ListRenderMode,
 ) -> str | Message:
     logger.info(
         "Starting kuwo search result render: mode={}, song_count={}",
         mode.value,
         len(songs),
     )
-    if mode is SearchRenderMode.IMAGE:
+    if mode is ListRenderMode.IMAGE:
         try:
             return await _render_search_results_image(songs)
         except Exception as exc:  # pragma: no cover - fallback branch

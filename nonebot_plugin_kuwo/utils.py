@@ -3,6 +3,10 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
+
+from .config import TrackRenderMode
+
 _MUSICRID_RE = re.compile(r"(?:MUSIC_)?(?P<song_id>\d+)$")
 
 
@@ -50,3 +54,65 @@ def format_track_text(
     lines.append(f"码率：{bitrate} kbps")
     lines.append(f"直链：{direct_url}")
     return "\n".join(lines)
+
+
+def format_track_card_content(
+    *,
+    artist: str | None = None,
+    album: str | None = None,
+    bitrate: int,
+    duration: int,
+) -> str:
+    parts = [value for value in (artist, album) if value]
+    if parts:
+        return " | ".join(parts)
+    return f"{duration}s | {bitrate} kbps"
+
+
+def build_track_message(
+    *,
+    render_mode: TrackRenderMode,
+    rid: str,
+    bitrate: int,
+    duration: int,
+    direct_url: str,
+    cover_url: str | None = None,
+    title: str | None = None,
+    artist: str | None = None,
+    album: str | None = None,
+) -> str | Message:
+    if render_mode is TrackRenderMode.CARD:
+        return Message(
+            [
+                MessageSegment.music_custom(
+                    url=direct_url,
+                    audio=direct_url,
+                    title=title or f"歌曲ID {rid}",
+                    content=format_track_card_content(
+                        artist=artist,
+                        album=album,
+                        bitrate=bitrate,
+                        duration=duration,
+                    ),
+                    img_url=cover_url,
+                )
+            ]
+        )
+
+    text = format_track_text(
+        rid=rid,
+        bitrate=bitrate,
+        duration=duration,
+        direct_url=direct_url,
+        title=title,
+        artist=artist,
+        album=album,
+    )
+    if not cover_url:
+        return text
+    return Message(
+        [
+            MessageSegment.image(cover_url),
+            MessageSegment.text(f"\n{text}"),
+        ]
+    )

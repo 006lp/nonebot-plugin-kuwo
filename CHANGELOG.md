@@ -1,10 +1,20 @@
 # Changelog
 
+## 0.1.2 - 2026-04-19
+
+- 为 `/kw` 与 `/kwid` 增加 OneBot V11 自定义音乐卡片输出
+- 自定义音乐卡片的 `url` 与 `audio` 均使用音乐直链，方便桌面端直接下载
+- 新增 `KUWO_TRACK_RENDER_MODE=text|card` 配置项
+- 将 `kwsearch` 列表渲染配置重命名为 `KUWO_LIST_RENDER_MODE=text|image`
+- 新增联动规则：当 `KUWO_TRACK_RENDER_MODE=card` 且未显式配置列表模式时，`kwsearch` 默认使用图片列表
+- 重构单曲消息构建逻辑，统一文本输出与卡片输出入口
+- 补充 `/kw`、`/kwid` 卡片模式测试，以及配置兼容与默认联动测试
+
 ## 0.1.1 - 2026-04-09
 
 - 为 `kwsearch` / `kw搜索` 增加基于 `nonebot-plugin-htmlrender` 的图片列表渲染
 - 搜索结果模型新增 `web_albumpic_short` 字段，并支持直接拼接搜索列表封面 URL
-- 搜索结果图片模式改为直接复用搜索接口封面信息，不再为列表中的每首歌单独请求封面接口
+- 搜索结果图片模式改为直接复用搜索接口封面信息，不再为每一首歌单独请求封面接口
 - 新增 `kwsearch` 图片模式命令测试，补充现有命令测试的 UTF-8 清理与断言稳定性
 - 图片渲染失败时回退到文本模式，避免直接影响正常会话
 - 为 `kwsearch` 图片链路补充 `debug` / `info` 级别排障日志，并补充 `LOG_LEVEL=DEBUG` 的使用说明
@@ -12,7 +22,7 @@
 ## 0.1.0 - 2026-04-08
 
 - 使用 `uv` 初始化并补齐 NoneBot2、OneBot、Alconna、httpx、pytest、nonebug 等依赖
-- 新增 `nonebot_plugin_kuwo` 包插件骨架
+- 新增 `nonebot_plugin_kuwo` 插件包骨架
 - 实现 `kwsearch` / `kw搜索` 搜索命令的最小闭环
 - 实现 `kw <关键词>` 首条歌曲直链命令
 - 实现 `kwid <rid>` 直链与封面查询命令

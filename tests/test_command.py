@@ -10,7 +10,7 @@ from nonebot.adapters.onebot.v11 import (
     PrivateMessageEvent,
 )
 
-from nonebot_plugin_kuwo.config import Config, SearchRenderMode
+from nonebot_plugin_kuwo.config import Config, ListRenderMode, TrackRenderMode
 from nonebot_plugin_kuwo.models import (
     KuwoDetailedTrackResource,
     KuwoSearchSong,
@@ -85,7 +85,8 @@ async def test_kwsearch_command_returns_text_results(
         "get_runtime_config",
         lambda: Config(
             kuwo_search_limit=5,
-            kuwo_search_render_mode=SearchRenderMode.TEXT,
+            kuwo_list_render_mode=ListRenderMode.TEXT,
+            kuwo_track_render_mode=TrackRenderMode.TEXT,
             kuwo_default_quality="standard",
         ),
     )
@@ -142,7 +143,8 @@ async def test_kwsearch_command_returns_image_results(
         "get_runtime_config",
         lambda: Config(
             kuwo_search_limit=5,
-            kuwo_search_render_mode=SearchRenderMode.IMAGE,
+            kuwo_list_render_mode=ListRenderMode.IMAGE,
+            kuwo_track_render_mode=TrackRenderMode.TEXT,
             kuwo_default_quality="standard",
         ),
     )
@@ -205,7 +207,8 @@ async def test_kw_command_returns_cover_and_text(
         "get_runtime_config",
         lambda: Config(
             kuwo_search_limit=5,
-            kuwo_search_render_mode=SearchRenderMode.TEXT,
+            kuwo_list_render_mode=ListRenderMode.TEXT,
+            kuwo_track_render_mode=TrackRenderMode.TEXT,
             kuwo_default_quality="lossless",
         ),
     )
@@ -225,6 +228,76 @@ async def test_kw_command_returns_cover_and_text(
                     album="Morning Dew Reflection",
                 )
             ),
+        ]
+    )
+
+    arp = type(
+        "Arp", (), {"all_matched_args": {"keyword": ("Morning", "Dew", "Reflection")}}
+    )()
+
+    with pytest.raises(MatcherFinished):
+        await nonebot_plugin_kuwo.handle_kw(arp)
+
+    assert dummy_matcher.message == expected
+
+
+@pytest.mark.asyncio
+async def test_kw_command_returns_music_card(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nonebot_plugin_kuwo
+
+    dummy_matcher = DummyMatcher()
+
+    async def fake_search(keyword: str, limit: int) -> list[KuwoSearchSong]:
+        assert keyword == "Morning Dew Reflection"
+        assert limit == 1
+        return [
+            KuwoSearchSong.model_validate(
+                {
+                    "MUSICRID": "MUSIC_553152678",
+                    "NAME": "Morning Dew Reflection.wav",
+                    "ARTIST": "rionos&Kangseoha&Kim Yoon",
+                    "ALBUM": "Morning Dew Reflection",
+                    "DURATION": "182",
+                }
+            )
+        ]
+
+    async def fake_get_song_media(rid: str, br: str) -> KuwoTrackResource:
+        assert rid == "553152678"
+        assert br == "128kmp3"
+        return KuwoTrackResource(
+            rid=rid,
+            bitrate=128,
+            duration=242,
+            direct_url="http://example.com/song.mp3",
+            cover_url="http://example.com/cover.jpg",
+        )
+
+    monkeypatch.setattr(nonebot_plugin_kuwo, "search_songs", fake_search)
+    monkeypatch.setattr(nonebot_plugin_kuwo, "get_song_media", fake_get_song_media)
+    monkeypatch.setattr(nonebot_plugin_kuwo, "kw", dummy_matcher)
+    monkeypatch.setattr(
+        nonebot_plugin_kuwo,
+        "get_runtime_config",
+        lambda: Config(
+            kuwo_search_limit=5,
+            kuwo_list_render_mode=ListRenderMode.IMAGE,
+            kuwo_track_render_mode=TrackRenderMode.CARD,
+            kuwo_default_quality="standard",
+        ),
+    )
+
+    expected = Message(
+        [
+            MessageSegment.music_custom(
+                url="http://example.com/song.mp3",
+                audio="http://example.com/song.mp3",
+                title="Morning Dew Reflection.wav",
+                content="rionos&Kangseoha&Kim Yoon | Morning Dew Reflection",
+                img_url="http://example.com/cover.jpg",
+            )
         ]
     )
 
@@ -273,7 +346,8 @@ async def test_kwid_command_returns_cover_and_text(
         "get_runtime_config",
         lambda: Config(
             kuwo_search_limit=5,
-            kuwo_search_render_mode=SearchRenderMode.TEXT,
+            kuwo_list_render_mode=ListRenderMode.TEXT,
+            kuwo_track_render_mode=TrackRenderMode.TEXT,
             kuwo_default_quality="standard",
         ),
     )
@@ -293,6 +367,70 @@ async def test_kwid_command_returns_cover_and_text(
                     album="Summer Pockets REFLECTION BLUE Original SoundTrack",
                 )
             ),
+        ]
+    )
+
+    arp = type("Arp", (), {"all_matched_args": {"rid": "MUSIC_553152678"}})()
+
+    with pytest.raises(MatcherFinished):
+        await nonebot_plugin_kuwo.handle_kwid(arp)
+
+    assert dummy_matcher.message == expected
+
+
+@pytest.mark.asyncio
+async def test_kwid_command_returns_music_card(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nonebot_plugin_kuwo
+
+    dummy_matcher = DummyMatcher()
+
+    async def fake_get_song_detailed_media(
+        rid: str, br: str
+    ) -> KuwoDetailedTrackResource:
+        assert rid == "553152678"
+        assert br == "128kmp3"
+        return KuwoDetailedTrackResource(
+            rid=rid,
+            bitrate=128,
+            duration=182,
+            direct_url="http://example.com/song.mp3",
+            cover_url="http://example.com/album.jpg",
+            title="Pocket wo Fukurasete ~Sea, you again~",
+            artist="VISUAL ARTS&Key Sounds Label&rionos",
+            album="Summer Pockets REFLECTION BLUE Original SoundTrack",
+        )
+
+    monkeypatch.setattr(
+        nonebot_plugin_kuwo,
+        "get_song_detailed_media",
+        fake_get_song_detailed_media,
+    )
+    monkeypatch.setattr(nonebot_plugin_kuwo, "kwid", dummy_matcher)
+    monkeypatch.setattr(
+        nonebot_plugin_kuwo,
+        "get_runtime_config",
+        lambda: Config(
+            kuwo_search_limit=5,
+            kuwo_list_render_mode=ListRenderMode.IMAGE,
+            kuwo_track_render_mode=TrackRenderMode.CARD,
+            kuwo_default_quality="standard",
+        ),
+    )
+
+    expected = Message(
+        [
+            MessageSegment.music_custom(
+                url="http://example.com/song.mp3",
+                audio="http://example.com/song.mp3",
+                title="Pocket wo Fukurasete ~Sea, you again~",
+                content=(
+                    "VISUAL ARTS&Key Sounds Label&rionos | "
+                    "Summer Pockets REFLECTION BLUE Original SoundTrack"
+                ),
+                img_url="http://example.com/album.jpg",
+            )
         ]
     )
 

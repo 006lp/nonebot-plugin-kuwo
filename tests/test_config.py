@@ -5,7 +5,8 @@ from uuid import uuid4
 
 from nonebot_plugin_kuwo.config import (
     Config,
-    SearchRenderMode,
+    ListRenderMode,
+    TrackRenderMode,
     get_quality_bitrate,
     get_runtime_config,
 )
@@ -17,7 +18,12 @@ def test_get_runtime_config_reads_latest_env(monkeypatch) -> None:
 
     env_file = test_root / ".env"
     env_file.write_text(
-        "KUWO_SEARCH_LIMIT=7\nKUWO_SEARCH_RENDER_MODE=image\nKUWO_DEFAULT_QUALITY=lossless\n",
+        (
+            "KUWO_SEARCH_LIMIT=7\n"
+            "KUWO_LIST_RENDER_MODE=image\n"
+            "KUWO_TRACK_RENDER_MODE=card\n"
+            "KUWO_DEFAULT_QUALITY=lossless\n"
+        ),
         encoding="utf-8",
     )
 
@@ -30,6 +36,29 @@ def test_get_runtime_config_reads_latest_env(monkeypatch) -> None:
     config = get_runtime_config()
 
     assert config.kuwo_search_limit == 7
-    assert config.kuwo_search_render_mode is SearchRenderMode.IMAGE
+    assert config.kuwo_list_render_mode is ListRenderMode.IMAGE
+    assert config.kuwo_track_render_mode is TrackRenderMode.CARD
     assert config.kuwo_default_quality.value == "lossless"
     assert get_quality_bitrate(config.kuwo_default_quality) == "2000kflac"
+
+
+def test_get_runtime_config_uses_image_list_mode_when_track_mode_is_card(monkeypatch) -> None:
+    test_root = Path(f"tests/.tmp-config-{uuid4().hex}")
+    test_root.mkdir(parents=True)
+
+    env_file = test_root / ".env"
+    env_file.write_text(
+        "KUWO_TRACK_RENDER_MODE=card\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("nonebot_plugin_kuwo.config.PROJECT_ROOT", test_root)
+    monkeypatch.setattr(
+        "nonebot_plugin_kuwo.config.get_plugin_config",
+        lambda _: Config(),
+    )
+
+    config = get_runtime_config()
+
+    assert config.kuwo_list_render_mode is ListRenderMode.IMAGE
+    assert config.kuwo_track_render_mode is TrackRenderMode.CARD
