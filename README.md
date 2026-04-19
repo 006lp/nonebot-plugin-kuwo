@@ -82,9 +82,16 @@
 
 ```dotenv
 COMMAND_START=["/"]
+LOG_LEVEL=INFO
 KUWO_SEARCH_LIMIT=5
 KUWO_SEARCH_RENDER_MODE=text
 KUWO_DEFAULT_QUALITY=standard
+```
+
+排查 `kwsearch` 图片渲染或发送问题时，可临时改为：
+
+```dotenv
+LOG_LEVEL=DEBUG
 ```
 
 当前支持的 `KUWO_DEFAULT_QUALITY`：

@@ -73,15 +73,37 @@ async def handle_kwsearch(arp: Arparma) -> None:
         raise RuntimeError("kwsearch matcher has not been initialized")
 
     config = get_runtime_config()
+    keyword = join_keyword_parts(arp.all_matched_args.get("keyword", ()))
+    logger.info(
+        "Received kwsearch command: keyword={}, limit={}, render_mode={}",
+        keyword,
+        config.kuwo_search_limit,
+        config.kuwo_search_render_mode.value,
+    )
     songs = await _search_song_candidates_by_parts(
         arp.all_matched_args.get("keyword", ()),
         config.kuwo_search_limit,
     )
+    logger.info("kwsearch search completed: keyword={}, song_count={}", keyword, len(songs))
 
     if not songs:
         await kwsearch.finish("未找到相关歌曲")
 
     message = await render_search_results(songs, config.kuwo_search_render_mode)
+    logger.debug(
+        "kwsearch render completed: keyword={}, message_type={}, segment_count={}",
+        keyword,
+        type(message).__name__,
+        len(message) if isinstance(message, Message) else 1,
+    )
+    if isinstance(message, Message):
+        logger.debug(
+            "kwsearch message first segment: keyword={}, segment_type={}, file_type={}",
+            keyword,
+            message[0].type if message else "unknown",
+            message[0].data.get("file", "")[:32] if message else "",
+        )
+    logger.info("Sending kwsearch response: keyword={}, render_mode={}", keyword, config.kuwo_search_render_mode.value)
     await kwsearch.finish(message)
 
 

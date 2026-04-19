@@ -15,6 +15,7 @@ _HTML_RENDER_BASE_URI = Path(__file__).resolve().as_uri()
 
 
 def _render_search_results_text(songs: Sequence[KuwoSearchSong]) -> str:
+    logger.debug("Rendering kuwo search results in text mode: song_count={}", len(songs))
     return "\n".join(
         format_search_result_line(index, song.song_id, song.name, song.artist)
         for index, song in enumerate(songs, start=1)
@@ -22,15 +23,27 @@ def _render_search_results_text(songs: Sequence[KuwoSearchSong]) -> str:
 
 
 def _load_html_to_pic() -> Callable[..., Awaitable[bytes]]:
+    logger.debug("Loading nonebot_plugin_htmlrender entrypoint")
     require("nonebot_plugin_htmlrender")
     from nonebot_plugin_htmlrender import html_to_pic
 
+    logger.debug("nonebot_plugin_htmlrender loaded successfully")
     return html_to_pic
 
 
 def _build_cover_block(song: KuwoSearchSong) -> str:
     if not song.album_cover_url:
+        logger.debug(
+            "Search result cover missing, using placeholder: song_id={}, name={}",
+            song.song_id,
+            song.name,
+        )
         return '<div class="cover cover--placeholder">NO COVER</div>'
+    logger.debug(
+        "Search result cover resolved: song_id={}, cover_url={}",
+        song.song_id,
+        song.album_cover_url,
+    )
     return (
         '<img class="cover" '
         f'src="{escape(song.album_cover_url, quote=True)}" '
@@ -39,6 +52,7 @@ def _build_cover_block(song: KuwoSearchSong) -> str:
 
 
 def _build_search_results_html(songs: Sequence[KuwoSearchSong]) -> str:
+    logger.debug("Building kuwo search result html: song_count={}", len(songs))
     cards = []
     for index, song in enumerate(songs, start=1):
         cards.append(
@@ -56,7 +70,7 @@ def _build_search_results_html(songs: Sequence[KuwoSearchSong]) -> str:
             """
         )
 
-    return f"""
+    html = f"""
     <!DOCTYPE html>
     <html lang="en">
       <head>
@@ -240,24 +254,49 @@ def _build_search_results_html(songs: Sequence[KuwoSearchSong]) -> str:
       </body>
     </html>
     """
+    logger.debug("Built kuwo search result html successfully: html_length={}", len(html))
+    return html
 
 
 async def _render_search_results_image(songs: Sequence[KuwoSearchSong]) -> Message:
+    logger.info("Rendering kuwo search results in image mode: song_count={}", len(songs))
     html_to_pic = _load_html_to_pic()
+    html = _build_search_results_html(songs)
+    logger.debug(
+        "Calling html_to_pic for kuwo search results: template_path={}, viewport_width={}, wait_ms={}",
+        _HTML_RENDER_BASE_URI,
+        1040,
+        200,
+    )
     image_bytes = await html_to_pic(
-        html=_build_search_results_html(songs),
+        html=html,
         template_path=_HTML_RENDER_BASE_URI,
         viewport={"width": 1040, "height": 10},
         wait=200,
         device_scale_factor=2,
     )
-    return Message(MessageSegment.image(image_bytes))
+    logger.info(
+        "Rendered kuwo search result image successfully: byte_length={}",
+        len(image_bytes),
+    )
+    message = Message(MessageSegment.image(image_bytes))
+    logger.debug(
+        "Built search result image message: segment_count={}, first_segment_type={}",
+        len(message),
+        message[0].type if message else "unknown",
+    )
+    return message
 
 
 async def render_search_results(
     songs: Sequence[KuwoSearchSong],
     mode: SearchRenderMode,
 ) -> str | Message:
+    logger.info(
+        "Starting kuwo search result render: mode={}, song_count={}",
+        mode.value,
+        len(songs),
+    )
     if mode is SearchRenderMode.IMAGE:
         try:
             return await _render_search_results_image(songs)
@@ -266,4 +305,9 @@ async def render_search_results(
                 "Search result image rendering failed; fallback to text mode"
             )
 
-    return _render_search_results_text(songs)
+    rendered_text = _render_search_results_text(songs)
+    logger.debug(
+        "Returning kuwo search text render result: text_length={}",
+        len(rendered_text),
+    )
+    return rendered_text

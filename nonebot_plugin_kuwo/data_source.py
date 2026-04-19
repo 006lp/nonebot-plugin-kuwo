@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import httpx
+from nonebot import logger
 from pydantic import ValidationError
 
 from .models import (
@@ -90,6 +91,12 @@ async def search_songs(keyword: str, limit: int) -> list[KuwoSearchSong]:
         "mobi": 1,
         "issubtitle": 1,
     }
+    logger.debug(
+        "Requesting kuwo search api: keyword={}, limit={}, url={}",
+        keyword,
+        limit,
+        SEARCH_API_URL,
+    )
     try:
         response = await client.get(SEARCH_API_URL, params=params)
         response.raise_for_status()
@@ -105,6 +112,11 @@ async def search_songs(keyword: str, limit: int) -> list[KuwoSearchSong]:
         search_response = KuwoSearchResponse.model_validate(payload)
     except ValidationError as exc:
         raise KuwoSearchResponseError("search response schema mismatch") from exc
+    logger.info(
+        "Kuwo search api succeeded: keyword={}, song_count={}",
+        keyword,
+        len(search_response.songs),
+    )
     return search_response.songs
 
 

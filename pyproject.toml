@@ -1,6 +1,6 @@
 [project]
 name = "nonebot-plugin-kuwo"
-version = "0.1.0"
+version = "0.1.1"
 description = "基于 NoneBot2 的酷我音乐插件"
 readme = "README.md"
 requires-python = ">=3.10"

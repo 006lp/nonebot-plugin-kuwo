@@ -13,6 +13,7 @@ wheels/
 .serena/
 AGENTS.md
 ARCHITECTURE.md
+SPEC.md
 
 # Test temp files
 tests/.tmp-config*/
