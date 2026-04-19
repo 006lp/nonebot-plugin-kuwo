@@ -3,6 +3,7 @@ name = "nonebot-plugin-kuwo"
 version = "0.2.0"
 description = "NoneBot2 plugin for Kuwo music search and track delivery."
 readme = "README.md"
+authors = [{ name = "006lp", email = "lpsuki@outlook.com" }]
 requires-python = ">=3.10"
 dependencies = [
     "httpx>=0.28.1,<1.0.0",
@@ -41,3 +42,16 @@ module-name = "nonebot_plugin_kuwo._qmc_rs"
 python-packages = ["nonebot_plugin_kuwo"]
 python-source = "."
 strip = true
+
+[project.urls]
+Homepage = "https://github.com/006lp/nonebot-plugin-kuwo"
+Issues = "https://github.com/006lp/nonebot-plugin-kuwo/issues"
+Repository = "https://github.com/006lp/nonebot-plugin-kuwo.git"
+
+[tool.nonebot.plugins]
+nonebot-plugin-kuwo = ["nonebot_plugin_kuwo"]
+
+[tool.nonebot.adapters]
+nonebot-adapter-onebot = [
+  { name = "OneBot V11", module_name = "nonebot.adapters.onebot.v11" },
+]

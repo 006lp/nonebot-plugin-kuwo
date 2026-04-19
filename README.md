@@ -1,64 +1,134 @@
-# nonebot-plugin-kuwo
+<div align="center">
+    <a href="https://nonebot.dev/">
+    <img src="https://github.com/Misty02600/nonebot-plugin-template/releases/download/assets/NoneBotPlugin.png" width="310" alt="logo"></a>
 
-基于 NoneBot2 的酷我音乐插件，当前已实现搜索列表、首条歌曲直链、按 `rid` 查询详情，以及面向 NapCat / OneBot V11 的多种消息输出。
+## ✨ *基于 NoneBot2 的酷我音乐插件* ✨
 
-## 当前能力
+[![LICENSE](https://img.shields.io/badge/license-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0.html)
+[![python](https://img.shields.io/badge/python-3.10+-blue.svg?logo=python&logoColor=white)](https://www.python.org)
+[![Adapters](https://img.shields.io/badge/Adapters-OneBot%20v11%20%2F%20NapCat-blue)](#-支持适配器)
+<br/>
 
-- 命令：`kwsearch` / `kw搜索` / `kw` / `kwid`
+[![uv](https://img.shields.io/badge/package%20manager-uv-black?logo=uv)](https://github.com/astral-sh/uv)
+[![ruff](https://img.shields.io/badge/code%20style-ruff-black?logo=ruff)](https://github.com/astral-sh/ruff)
+[![rust](https://img.shields.io/badge/native-Rust-orange?logo=rust)](https://www.rust-lang.org)
+
+</div>
+
+## 📖 介绍
+
+`nonebot-plugin-kuwo` 是一个面向 NoneBot2 的酷我音乐插件，当前已经实现：
+
+- 搜索歌曲列表：`kwsearch` / `kw搜索`
+- 获取关键词搜索结果中的第一首歌：`kw`
+- 通过 `rid` 直接获取单曲：`kwid`
+- 面向 NapCat / OneBot V11 输出 `text`、`image`、`card`、`record`、`file`
+- 对 `.mflac` 文件执行本地解密，转换为可播放的 `.flac`
+
+插件当前明确坚持“一条命令只做一件事”，不引入等待用户继续输入序号的多轮选歌会话。
+
+## ✨ 功能概览
+
 - 命令解析：`nonebot-plugin-alconna`
-- 搜索列表输出：`text` / `image`
+- 搜索列表渲染：`text` / `image`
 - 单曲输出：`text` / `card` / `record` / `file`
-- 直链请求：`https://nmobi.kuwo.cn/mobi.s`
-- 详情请求：`http://musicpay.kuwo.cn/music.pay`
+- 网络请求：`httpx.AsyncClient`
 - 文件缓存：`nonebot-plugin-localstore`
-- `.mflac` 文件解密：由 Rust + PyO3 扩展负责，兼容 Kuwo `ekey` + QMCv2 流程，落地为可播放的 `.flac`
+- 图片渲染：`nonebot-plugin-htmlrender`
+- 原生解密：Rust + PyO3 + maturin
 
-## 命令
+## 🔌 支持适配器
 
-命令前缀跟随 NoneBot2 的 `COMMAND_START`。下面示例默认使用 `/`。
+当前项目按 OneBot V11 协议实现，并优先面向 NapCat 场景优化：
 
-```text
-/kwsearch <关键词>
-/kw搜索 <关键词>
-/kw <关键词> [-q|--quality <quality>]
-/kwid <rid> [-q|--quality <quality>]
+- [OneBot V11](https://github.com/botuniverse/onebot-11)
+- [NapCat](https://github.com/NapNeko/NapCatQQ)
+
+当前已覆盖的消息形态：
+
+- 图片消息段
+- 语音消息段 `record`
+- 文件消息段 `file`
+- 自定义音乐卡片 `music/custom`
+
+## 📦 安装
+
+> [!IMPORTANT]
+> 普通用户安装已发布 wheel 时不需要额外构建 Rust。
+> 只有源码开发、测试或从源码安装时，才需要本地 Rust 工具链。
+
+<details open>
+<summary>使用 nb-cli 安装</summary>
+
+在 NoneBot2 项目根目录执行：
+
+```bash
+nb plugin install nonebot-plugin-kuwo --upgrade
 ```
 
-补充说明：
+使用 PyPI 源：
 
-- `kwsearch` 只返回搜索列表，不进入多轮会话。
-- `kw` 只取搜索结果的第一首歌。
-- `kwid` 支持 `123456` 和 `MUSIC_123456` 两种输入。
-- 所有命令均显式启用 `use_cmd_start=True` 和 `block=True`。
+```bash
+nb plugin install nonebot-plugin-kuwo --upgrade -i https://pypi.org/simple
+```
 
-## 输出模式
+</details>
 
-### `kwsearch`
+<details>
+<summary>使用包管理器安装</summary>
 
-- `text`
-  - 返回格式：`序号. 音乐id 歌曲名-歌手`
-- `image`
-  - 使用 `nonebot-plugin-htmlrender` 渲染图片列表
-  - 直接复用搜索接口返回的 `web_albumpic_short` 拼接封面
-  - 如果渲染失败，会回退到文本模式
+推荐使用 `uv`：
 
-### `kw` / `kwid`
+```bash
+uv add nonebot-plugin-kuwo
+```
 
-- `text`
-  - 如果有封面，发送 `image + text`
-  - 文本包含：歌名、歌手、专辑、时长、码率、直链
-  - 如果直链接口返回了 `ekey`，会一并显示
-- `card`
-  - 发送 OneBot V11 自定义音乐卡片
-  - `url` 和 `audio` 都使用音乐直链，方便桌面端直接下载
-- `record`
-  - 发送 OneBot V11 `record` 消息段
-  - 使用音乐直链，不走本地下载
-- `file`
-  - 将可播放文件下载到本地缓存目录后发送 OneBot V11 `file` 消息段
-  - 如果源格式是 `.mflac`，会先本地解密成 `.flac`
+安装 GitHub 仓库主分支：
 
-## 配置
+```bash
+uv add git+https://github.com/006lp/nonebot-plugin-kuwo@main
+```
+
+如果你使用其他包管理器，也可以选择：
+
+```bash
+pdm add nonebot-plugin-kuwo
+```
+
+```bash
+poetry add nonebot-plugin-kuwo
+```
+
+安装后，在 NoneBot2 项目的 `pyproject.toml` 中加入：
+
+```toml
+plugins = ["nonebot_plugin_kuwo"]
+```
+
+</details>
+
+## ⚙️ 配置
+
+插件运行时会按需读取配置：
+
+- 每次命令执行时重新读取 `.env`
+- 如果设置了 `ENVIRONMENT`，会额外叠加 `.env.{ENVIRONMENT}`
+- 进程环境变量优先级高于 `.env`
+
+> [!NOTE]
+> 当 `KUWO_TRACK_RENDER_MODE=card` 且没有显式配置 `KUWO_LIST_RENDER_MODE` 时，
+> `kwsearch` 会自动回落到 `image` 模式，以匹配卡片场景下更合适的搜索列表展示。
+
+### 配置项
+
+| 配置项 | 必填 | 默认值 | 说明 |
+| :-- | :--: | :--: | :-- |
+| `KUWO_SEARCH_LIMIT` | 否 | `5` | 搜索结果条数，当前限制范围为 `1-10` |
+| `KUWO_LIST_RENDER_MODE` | 否 | `text` | 搜索列表渲染模式：`text` / `image` |
+| `KUWO_TRACK_RENDER_MODE` | 否 | `text` | 单曲输出模式：`text` / `card` / `record` / `file` |
+| `KUWO_DEFAULT_QUALITY` | 否 | `standard` | 默认音质：`standard` / `exhigh` / `lossless` / `hires` / `hifi` / `sur` / `jymaster` |
+
+### 配置示例
 
 ```dotenv
 COMMAND_START=["/"]
@@ -69,37 +139,93 @@ KUWO_TRACK_RENDER_MODE=text
 KUWO_DEFAULT_QUALITY=standard
 ```
 
-### 配置项
+## 🎵 使用
 
-- `KUWO_SEARCH_LIMIT`
-  - 搜索结果条数，默认 `5`
-  - 当前限制范围是 `1-10`
-- `KUWO_LIST_RENDER_MODE`
-  - 搜索列表渲染模式：`text` / `image`
-- `KUWO_TRACK_RENDER_MODE`
-  - 单曲输出模式：`text` / `card` / `record` / `file`
-- `KUWO_DEFAULT_QUALITY`
-  - 默认音质：`standard` / `exhigh` / `lossless` / `hires` / `hifi` / `sur` / `jymaster`
+### 命令列表
 
-### 配置读取规则
+> [!IMPORTANT]
+> 所有命令均显式启用 `use_cmd_start=True` 与 `block=True`，会跟随 NoneBot2 的 `COMMAND_START`。
 
-- 每次命令执行时重新读取 `.env`
-- 如果设置了 `ENVIRONMENT`，也会叠加读取 `.env.{ENVIRONMENT}`
-- 进程环境变量优先级高于 `.env`
-- 如果未显式设置 `KUWO_LIST_RENDER_MODE`，且 `KUWO_TRACK_RENDER_MODE=card`，则 `kwsearch` 默认使用 `image`
+| 命令 | 参数 | 说明 |
+| :-- | :-- | :-- |
+| `kwsearch <关键词>` | 关键词 | 返回搜索结果列表 |
+| `kw搜索 <关键词>` | 关键词 | `kwsearch` 的中文别名 |
+| `kw <关键词> [-q/--quality <quality>]` | 关键词，可选音质 | 只取搜索结果中的第一首歌 |
+| `kwid <rid> [-q/--quality <quality>]` | 音乐 ID，可选音质 | 通过 `rid` 直接查询单曲 |
 
-## 音质规则
+补充说明：
 
-- `/kw` 和 `/kwid` 都支持 `-q/--quality`
-- 未传 `-q/--quality` 时，使用 `KUWO_DEFAULT_QUALITY`
-- `text` / `file` 模式按最终解析出的音质请求远程接口
-- `card` 模式支持 `-q/--quality`，但最终上限固定为 `lossless`
-- `record` 模式无论默认值还是显式传参，都会强制回落到 `standard`
-- `record` / `card` 的音质回落只记录到日志，不额外给用户发送提示消息
+- `kwsearch` 只返回搜索结果，不进入多轮选歌会话
+- 非法音质参数会直接报错，不继续请求远程接口
 
-## Rust 解密扩展
+### 搜索列表输出
 
-当前 `qmc` 核心已经整体迁移到 Rust，并通过 `PyO3 + maturin` 暴露给 Python：
+`kwsearch` / `kw搜索` 当前支持：
+
+- `text`
+  - 返回格式：`序号. 音乐id 歌曲名-歌手`
+- `image`
+  - 使用 `nonebot-plugin-htmlrender` 渲染搜索图片
+  - 直接复用搜索接口返回的 `web_albumpic_short` 拼接封面
+  - 渲染失败时自动回退到文本模式
+
+### 单曲输出
+
+`kw` / `kwid` 当前支持：
+
+- `text`
+  - 如果有封面，则发送 `image + text`
+  - 文本包含：歌名、歌手、专辑、时长、码率、直链
+  - 如果直链接口返回 `ekey`，会一并显示
+- `card`
+  - 发送 OneBot V11 自定义音乐卡片
+  - `url` 与 `audio` 都使用音乐直链，方便桌面端直接下载
+- `record`
+  - 发送 OneBot V11 `record` 消息段
+  - 直接使用远程音频地址，不走本地下载
+- `file`
+  - 下载可播放文件到本地缓存目录后，再发送 OneBot V11 `file` 消息段
+  - 如果源格式是 `.mflac`，会先本地解密成 `.flac`
+
+### 音质规则
+
+- `/kw` 与 `/kwid` 都支持 `-q/--quality`
+- 未传音质时，使用 `KUWO_DEFAULT_QUALITY`
+- `text` / `file` 使用最终解析后的音质请求远程接口
+- `card` 支持显式传入音质，但最终上限固定为 `lossless`
+- `record` 无论默认值还是显式传参，都会强制回落到 `standard`
+- `record` / `card` 的音质回落只写日志，不额外向用户发送提示消息
+
+## 🗂️ 文件模式与 `.mflac`
+
+普通可播放格式当前支持：
+
+- `mp3`
+- `flac`
+- `aac`
+- `ogg`
+- `wav`
+
+文件缓存说明：
+
+- 缓存目录来自 `nonebot-plugin-localstore`
+- 子目录为 `tracks/`
+- 相同 `rid + bitrate` 优先复用已缓存文件
+
+`.mflac` 当前处理流程：
+
+1. 下载原始 `.mflac`
+2. 使用 Kuwo 返回的 `ekey`
+3. 兼容 Kuwo `kuwodes` 解密流程，提取 QMC 原始密钥
+4. 推导最终 QMC 密钥
+5. 本地解密为可播放的 `.flac`
+6. 发送解密后的 `file` 消息段
+
+## 🦀 Rust 解密扩展
+
+当前 `qmc` 核心已经整体迁移到 Rust，并通过 `PyO3 + maturin` 暴露给 Python。
+
+项目结构中的关键文件：
 
 - Rust crate：`Cargo.toml`
 - PyO3 入口：`src/lib.rs`
@@ -122,66 +248,46 @@ KUWO_DEFAULT_QUALITY=standard
 - 包内额外提供 `_qmc_rs.pyi` 与 `py.typed`，便于 Pylance / 类型检查器识别原生扩展签名
 - 采用 `abi3-py310`，便于生成跨 Python 3.10+ 的平台 wheel
 
-## `file` 模式与 `.mflac`
+## 🧪 开发
 
-- 普通可播放格式目前支持：`mp3` / `flac` / `aac` / `ogg` / `wav`
-- 文件缓存目录来自 `nonebot-plugin-localstore` 的插件缓存目录，子目录为 `tracks/`
-- 相同 `rid + bitrate` 会优先复用已缓存文件
+> [!IMPORTANT]
+> 源码开发、测试和本地调试需要 Rust 工具链。
+> 已发布 wheel 安装场景不需要再手动构建 `_qmc_rs`。
 
-`.mflac` 处理流程：
-
-1. 下载原始 `.mflac`
-2. 使用 Kuwo 返回的 `ekey`
-3. 兼容 Kuwo `kuwodes` 解密流程，提取 QMC 原始密钥
-4. 推导最终 QMC 密钥
-5. 本地解密为可播放的 `.flac`
-6. 发送解密后的 `file` 消息段
-
-## 开发要求
-
-本项目现在需要 Rust 工具链才能完整开发和测试。
-
-本地准备：
+### 本地准备
 
 ```bash
 uv sync
 uv run maturin develop --release
 ```
 
-日常命令：
+### 常用命令
 
 ```bash
 uv run ruff check .
+
 uv run pytest tests/ -q -p no:cacheprovider
+
 cargo fmt --all
 ```
 
-## 发布
-
-仓库已预留 GitHub Actions 流程：
-
-- CI：`.github/workflows/ci.yml`
-- PyPI 发布：`.github/workflows/release.yml`
-
-发布策略：
-
-- 通过 `maturin-action` 构建 abi3 wheel
-- 覆盖 Linux / Windows / macOS
-- 使用 `pypa/gh-action-pypi-publish` 进行 PyPI 发布
-- 建议使用 PyPI Trusted Publishing
-
-## 当前限制
+## ⚠️ 当前限制
 
 - 暂未实现单用户调用频率限制
 - 暂未实现文件缓存清理策略
 
-## 后续计划
+## 🗺️ 后续计划
 
 - 评估 `file` 模式缓存生命周期与清理策略
 - 补齐真实 NapCat 环境下的端到端验证
 - 视需要继续优化 Rust 解密核心的吞吐表现
 - 细化 PyPI 发布矩阵与版本发布规范
 
-## 许可证
+## 🙏 致谢
 
-本项目采用 AGPL v3，详见仓库根目录下的 `LICENSE`。
+- [LiuLang](mailto:gsushzhsosgsu@gmail.com) 提供 Kuwo `ekey` 所需的 DES 解密算法
+- [UnblockNeteaseMusic](https://github.com/UnblockNeteaseMusic/server) 提供音乐直链接口
+
+## 📄 许可证
+
+本项目采用 AGPL v3，详见仓库根目录下的 [LICENSE](./LICENSE)。
