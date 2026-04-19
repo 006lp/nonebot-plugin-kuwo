@@ -1,7 +1,7 @@
 [project]
 name = "nonebot-plugin-kuwo"
 version = "0.2.0"
-description = "基于 NoneBot2 的酷我音乐插件"
+description = "NoneBot2 plugin for Kuwo music search and track delivery."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -17,6 +17,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "fastapi>=0.115.0,<1.0.0",
+    "maturin>=1.13.1",
     "nonebug>=0.4.4",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
@@ -29,3 +30,14 @@ dev = [
 override-dependencies = [
     "greenlet==3.3.2; sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
+
+[build-system]
+requires = ["maturin>=1.13.1,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+bindings = "pyo3"
+module-name = "nonebot_plugin_kuwo._qmc_rs"
+python-packages = ["nonebot_plugin_kuwo"]
+python-source = "."
+strip = true

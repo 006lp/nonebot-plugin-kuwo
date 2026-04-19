@@ -4,6 +4,7 @@ __pycache__/
 build/
 dist/
 wheels/
+target/
 *.egg-info
 
 # Virtual environments
@@ -16,6 +17,10 @@ ARCHITECTURE.md
 SPEC.md
 
 # Test temp files
+tests/.tmp/
 tests/.tmp-config*/
 pytest-cache-files-*
 .ruff_cache/
+nonebot_plugin_kuwo/_qmc_rs*.pyd
+nonebot_plugin_kuwo/_qmc_rs*.so
+nonebot_plugin_kuwo/_qmc_rs*.dylib

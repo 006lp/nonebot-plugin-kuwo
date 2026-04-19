@@ -1,0 +1,13 @@
+[package]
+name = "nonebot-plugin-kuwo-rust"
+version = "0.2.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "_qmc_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+base64 = "0.22.1"
+pyo3 = { version = "0.27.1", features = ["extension-module", "abi3-py310"] }

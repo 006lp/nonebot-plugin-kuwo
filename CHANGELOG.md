@@ -1,13 +1,18 @@
 # Changelog
 
-## 0.2.0 - 2026-04-19
+## 0.2.0 - 2026-04-20
 
-- 明确记录当前支持的四种单曲输出模式：`text` / `card` / `record` / `file`
-- 明确记录 `card` 模式音质上限为 `lossless`
-- 明确记录 `record` 模式强制回落到 `standard`
-- 明确记录 `.mflac` 通过 Kuwo `ekey` + QMCv2 链路解密为 `.flac` 后发送
-- 明确记录 `file` 模式使用 `nonebot-plugin-localstore` 缓存
-- 补充真实 `.mflac + ekey` 样本的完整解密验证说明
+- 为 Rust 原生扩展补充 `_qmc_rs.pyi` 与 `py.typed`，修复 Pylance 对 `_qmc_rs` 的未知导入符号提示
+- 强化 CI / Release 工作流，补齐 Rust 格式检查与锁文件约束
+- Release 工作流显式固定 Linux `manylinux2014`，并使用 `--compatibility pypi`
+- 补充 Rust 原生 `derive_qmc_key` 与 `decrypt_qmc_bytes` 的直接样本测试
+- 将 `nonebot_plugin_kuwo/qmc.py` 的核心算法整体迁移为 Rust 扩展
+- 使用 `PyO3 + maturin` 暴露原生扩展模块 `nonebot_plugin_kuwo._qmc_rs`
+- 保留 Python 包装层 `nonebot_plugin_kuwo/qmc.py`，维持原有 Python API 形状
+- `decrypt_mflac_file` 现在由 Rust 原生代码执行，并在原生层释放 GIL
+- `pyproject.toml` 切换为 `maturin` build backend，并增加开发依赖 `maturin`
+- 更新 `.gitignore`，忽略 Rust 构建产物与本地扩展文件
+- 新增 GitHub Actions 工作流，用于 CI 和跨平台 PyPI 发布
 
 ## 0.1.3 - 2026-04-19
 
