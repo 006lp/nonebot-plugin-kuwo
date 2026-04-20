@@ -19,13 +19,19 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             manylinux: "2014"
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: "2014"
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             manylinux: "off"
-          - os: macos-13
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            manylinux: "off"
+          - os: macos-26-intel
             target: x86_64-apple-darwin
             manylinux: "off"
-          - os: macos-14
+          - os: macos-latest
             target: aarch64-apple-darwin
             manylinux: "off"
 
@@ -33,10 +39,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
@@ -60,15 +66,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
