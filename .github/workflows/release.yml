@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, for example v0.2.1
+        required: true
+        type: string
   push:
     tags:
       - "v*"
@@ -56,7 +61,7 @@ jobs:
           args: --release --out dist --compatibility pypi --locked
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.target }}
           path: dist
@@ -86,7 +91,7 @@ jobs:
         run: uv run maturin sdist --out dist
 
       - name: Upload sdist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: dist
@@ -96,12 +101,27 @@ jobs:
       - build-wheels
       - build-sdist
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || inputs.tag != ''
+    permissions:
+      contents: write
+      id-token: write
     environment:
       name: pypi
 
     steps:
+      - name: Resolve release tag
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.ref_name }}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist-artifacts
 
@@ -110,6 +130,26 @@ jobs:
         run: |
           mkdir -p dist
           find dist-artifacts -type f \( -name "*.whl" -o -name "*.tar.gz" \) -exec cp {} dist/ \;
+
+      - name: Publish to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(dist/*.whl dist/*.tar.gz)
+          if (( ${#files[@]} == 0 )); then
+            echo "No distribution files found in dist/"
+            exit 1
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${files[@]}" --verify-tag --generate-notes
+          fi
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
