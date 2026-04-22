@@ -61,6 +61,16 @@ class Config(BaseModel):
         default=KuwoQuality.STANDARD,
         alias="KUWO_DEFAULT_QUALITY",
     )
+    kuwo_track_cache_retention_days: int = Field(
+        default=1,
+        alias="KUWO_TRACK_CACHE_RETENTION_DAYS",
+        ge=0,
+    )
+    kuwo_track_cache_max_size_mb: int = Field(
+        default=1024,
+        alias="KUWO_TRACK_CACHE_MAX_SIZE_MB",
+        ge=0,
+    )
 
     @field_validator("kuwo_list_render_mode", mode="before")
     @classmethod
@@ -110,6 +120,8 @@ def _load_system_env_values() -> dict[str, str]:
         "KUWO_LIST_RENDER_MODE",
         "KUWO_TRACK_RENDER_MODE",
         "KUWO_DEFAULT_QUALITY",
+        "KUWO_TRACK_CACHE_RETENTION_DAYS",
+        "KUWO_TRACK_CACHE_MAX_SIZE_MB",
     }
     return {key: os.environ[key] for key in keys if key in os.environ}
 
@@ -142,7 +154,16 @@ def get_runtime_config() -> Config:
         not list_render_mode_is_explicit
         and config.kuwo_track_render_mode is TrackRenderMode.CARD
     ):
-        return config.model_copy(update={"kuwo_list_render_mode": ListRenderMode.IMAGE})
+        config = config.model_copy(update={"kuwo_list_render_mode": ListRenderMode.IMAGE})
+
+    if 0 < config.kuwo_track_cache_max_size_mb < 600:
+        logger.warning(
+            "KUWO_TRACK_CACHE_MAX_SIZE_MB={} is smaller than the recommended minimum "
+            "600MB; a single master-quality mflac may temporarily need about 500MB "
+            "during decrypt.",
+            config.kuwo_track_cache_max_size_mb,
+        )
+
     return config
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "nonebot-plugin-kuwo"
-version = "0.2.0"
+version = "0.2.1"
 description = "NoneBot2 plugin for Kuwo music search and track delivery."
 readme = "README.md"
 authors = [{ name = "006lp", email = "lpsuki@outlook.com" }]

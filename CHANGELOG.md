@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 - 2026-04-22
+
+- 新增 `KUWO_TRACK_CACHE_RETENTION_DAYS` 与 `KUWO_TRACK_CACHE_MAX_SIZE_MB`，为 `file` 模式缓存提供按时间和按大小的自动清理策略
+- `file` 模式缓存命中时会刷新文件时间，容量清理按最旧文件优先淘汰
+- `.mflac` 解密成功后会立即删除中间缓存，减少双份占用
+- `0` 值可分别禁用按天数或按大小清理，两个值都为 `0` 时完全关闭自动清理
+
 ## 0.2.0 - 2026-04-20
 
 - 为 Rust 原生扩展补充 `_qmc_rs.pyi` 与 `py.typed`，修复 Pylance 对 `_qmc_rs` 的未知导入符号提示

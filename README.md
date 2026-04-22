@@ -127,6 +127,8 @@ plugins = ["nonebot_plugin_kuwo"]
 | `KUWO_LIST_RENDER_MODE` | 否 | `text` | 搜索列表渲染模式：`text` / `image` |
 | `KUWO_TRACK_RENDER_MODE` | 否 | `text` | 单曲输出模式：`text` / `card` / `record` / `file` |
 | `KUWO_DEFAULT_QUALITY` | 否 | `standard` | 默认音质：`standard` / `exhigh` / `lossless` / `hires` / `hifi` / `sur` / `jymaster` |
+| `KUWO_TRACK_CACHE_RETENTION_DAYS` | 否 | `1` | `file` 模式缓存按天数清理；`0` 表示禁用按时长清理 |
+| `KUWO_TRACK_CACHE_MAX_SIZE_MB` | 否 | `1024` | `file` 模式缓存总大小上限；`0` 表示禁用按大小清理，不建议低于 `600` |
 
 ### 配置示例
 
@@ -137,6 +139,8 @@ KUWO_SEARCH_LIMIT=5
 KUWO_LIST_RENDER_MODE=text
 KUWO_TRACK_RENDER_MODE=text
 KUWO_DEFAULT_QUALITY=standard
+KUWO_TRACK_CACHE_RETENTION_DAYS=1
+KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 ```
 
 ## 🎵 使用
@@ -211,6 +215,12 @@ KUWO_DEFAULT_QUALITY=standard
 - 缓存目录来自 `nonebot-plugin-localstore`
 - 子目录为 `tracks/`
 - 相同 `rid + bitrate` 优先复用已缓存文件
+- 缓存命中时会刷新文件时间，用于近似 LRU 清理
+- 默认按 `1` 天和 `1024MB` 双重策略自动清理
+- `KUWO_TRACK_CACHE_RETENTION_DAYS=0` 表示禁用按天数清理
+- `KUWO_TRACK_CACHE_MAX_SIZE_MB=0` 表示禁用按大小清理
+- 两个值都设为 `0` 时，不做自动缓存清理
+- 不建议将 `KUWO_TRACK_CACHE_MAX_SIZE_MB` 设低于 `600`，单个母带 `.mflac` 加解密过程可能临时占用约 `500MB`
 
 `.mflac` 当前处理流程：
 
@@ -220,6 +230,7 @@ KUWO_DEFAULT_QUALITY=standard
 4. 推导最终 QMC 密钥
 5. 本地解密为可播放的 `.flac`
 6. 发送解密后的 `file` 消息段
+7. 解密成功后立即删除中间 `.mflac`，避免长期双份占用
 
 ## 🦀 Rust 解密扩展
 
@@ -274,11 +285,9 @@ cargo fmt --all
 ## ⚠️ 当前限制
 
 - 暂未实现单用户调用频率限制
-- 暂未实现文件缓存清理策略
 
 ## 🗺️ 后续计划
 
-- 评估 `file` 模式缓存生命周期与清理策略
 - 补齐真实 NapCat 环境下的端到端验证
 - 视需要继续优化 Rust 解密核心的吞吐表现
 - 细化 PyPI 发布矩阵与版本发布规范
