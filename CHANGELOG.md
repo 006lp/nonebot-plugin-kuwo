@@ -1,8 +1,12 @@
 # Changelog
 
+## 0.2.3 - 2026-04-28
+
+- 调整 GitHub Actions 触发条件，`CI` 响应分支 push / PR，但忽略 `v*` tag push，避免发布时同一提交触发重复 CI
+- 修复跨平台 CI 中 `nonebot-plugin-htmlrender` 通过 `playwright` 导入时缺少 `greenlet` 的问题，改为正式跨平台运行时依赖
+
 ## 0.2.2 - 2026-04-28
 
-- 修复跨平台 CI 中 `nonebot-plugin-htmlrender` 通过 `playwright` 导入时缺少 `greenlet` 的问题，改为正式跨平台运行时依赖
 - 命令测试改为适配器无关，不再要求测试环境安装 `nonebot-adapter-onebot`
 - 按 NoneBot 官方插件规范重构插件入口，顶层固定 `require("nonebot_plugin_alconna")`，并继承其适配器支持列表
 - 运行时彻底移除对 `nonebot-adapter-onebot` 的直接依赖，消息发送统一改用 `uniseg`

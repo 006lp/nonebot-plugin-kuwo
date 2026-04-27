@@ -22,7 +22,7 @@ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
 name = "nonebot-plugin-kuwo-rust"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "base64",
  "pyo3",

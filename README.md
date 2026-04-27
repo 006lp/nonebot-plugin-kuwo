@@ -19,15 +19,6 @@
 
 基于 NoneBot2 的酷我音乐插件，面向 NapCat / OneBot V11 使用场景，提供搜索、直链、音乐卡片、语音和文件发送能力。
 
-当前实现重点：
-
-- 命令解析使用 `nonebot-plugin-alconna`
-- 消息输出统一使用 `uniseg`
-- 配置统一使用 `get_plugin_config(Config)`
-- 文件缓存统一使用 `nonebot-plugin-localstore`
-- `nonebot-plugin-htmlrender` 所需 `greenlet` 已作为正式跨平台依赖提供
-- `.mflac` 解密核心使用 `Rust + PyO3 + maturin`
-
 ## 功能
 
 - `kwsearch <关键词>`
@@ -214,7 +205,6 @@ cargo fmt --all
 
 - 发布版 wheel 会自带原生扩展 `_qmc_rs`
 - 源码开发或本地调试需要先执行 `maturin develop`
-- 运行测试不要求额外安装 `nonebot-adapter-onebot`
 
 ## 项目结构
 
