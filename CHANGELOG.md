@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.2 - 2026-04-28
+
+- 命令测试改为适配器无关，不再要求测试环境安装 `nonebot-adapter-onebot`
+- 按 NoneBot 官方插件规范重构插件入口，顶层固定 `require("nonebot_plugin_alconna")`，并继承其适配器支持列表
+- 运行时彻底移除对 `nonebot-adapter-onebot` 的直接依赖，消息发送统一改用 `uniseg`
+- 配置统一改为 `get_plugin_config(Config)`，去掉手动读 `.env` 的历史思路
+- 配置与数据模型清理为兼容 Pydantic v1 的写法，移除无意义的兼容分支和 `ConfigDict` 风格写法
+- `nonebot-plugin-localstore` 改为惰性解析并缓存一次插件缓存目录，避免导入期误调用
+- `kwsearch` / `kw` / `kwid` 的用户提示文本统一修正为 UTF-8 正常内容
+- 测试基建重写，修复插件在测试收集阶段被提前导入的问题
+- 测试环境显式隔离 `localstore` 路径，并在 nonebug 中移除 htmlrender 的 Playwright 生命周期钩子
+
 ## 0.2.1 - 2026-04-22
 
 - 新增 `KUWO_TRACK_CACHE_RETENTION_DAYS` 与 `KUWO_TRACK_CACHE_MAX_SIZE_MB`，为 `file` 模式缓存提供按时间和按大小的自动清理策略

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from nonebot.compat import field_validator
+from pydantic import BaseModel, Field
 
 from .utils import normalize_musicrid, strip_url_query
 
@@ -8,8 +9,6 @@ SEARCH_COVER_BASE_URL = "http://img1.kwcdn.kuwo.cn/star/albumcover/"
 
 
 class KuwoSearchSong(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     musicrid: str = Field(alias="MUSICRID")
     name: str = Field(alias="NAME")
     artist: str = Field(alias="ARTIST")
@@ -41,8 +40,6 @@ class KuwoSearchSong(BaseModel):
 
 
 class KuwoSearchResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     total: int = Field(alias="TOTAL", default=0)
     songs: list[KuwoSearchSong] = Field(alias="abslist")
 
@@ -53,14 +50,12 @@ class KuwoSearchResponse(BaseModel):
 
 
 class KuwoTrackLinkData(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    bitrate: int = Field(alias="bitrate")
-    duration: int = Field(alias="duration")
-    format: str = Field(alias="format")
-    ekey: str | None = Field(alias="ekey", default=None)
-    rid: int = Field(alias="rid")
-    url: str = Field(alias="url")
+    bitrate: int
+    duration: int
+    format: str
+    ekey: str | None = None
+    rid: int
+    url: str
 
     @field_validator("bitrate", "duration", "rid", mode="before")
     @classmethod
@@ -73,11 +68,9 @@ class KuwoTrackLinkData(BaseModel):
 
 
 class KuwoTrackLinkResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    code: int = Field(alias="code")
-    data: KuwoTrackLinkData = Field(alias="data")
-    msg: str = Field(alias="msg", default="")
+    code: int
+    data: KuwoTrackLinkData
+    msg: str = ""
 
     @field_validator("code", mode="before")
     @classmethod
@@ -86,12 +79,10 @@ class KuwoTrackLinkResponse(BaseModel):
 
 
 class KuwoTrackDetail(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     song_id: int = Field(alias="id")
-    name: str = Field(alias="name")
-    artist: str = Field(alias="artist", default="")
-    album: str = Field(alias="album", default="")
+    name: str
+    artist: str = ""
+    album: str = ""
     cover_url: str | None = Field(alias="albumPic", default=None)
 
     @field_validator("song_id", mode="before")
@@ -109,12 +100,10 @@ class KuwoTrackDetail(BaseModel):
 
 
 class KuwoTrackDetailResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    errorcode: int = Field(alias="errorcode")
-    errormsg: str = Field(alias="errormsg", default="")
-    result: str = Field(alias="result", default="")
-    songs: list[KuwoTrackDetail] = Field(alias="songs", default_factory=list)
+    errorcode: int
+    errormsg: str = ""
+    result: str = ""
+    songs: list[KuwoTrackDetail] = Field(default_factory=list)
 
     @field_validator("errorcode", mode="before")
     @classmethod
@@ -123,8 +112,6 @@ class KuwoTrackDetailResponse(BaseModel):
 
 
 class KuwoTrackResource(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
     rid: str
     format: str
     ekey: str | None = None

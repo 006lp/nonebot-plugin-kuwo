@@ -1,46 +1,39 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
-import nonebug
 import pytest
-from nonebot.adapters.onebot.v11 import (
-    Adapter,
-    Bot,
-    Message,
-    MessageSegment,
-    PrivateMessageEvent,
-)
-
-from nonebot_plugin_kuwo.config import Config, ListRenderMode, TrackRenderMode
-from nonebot_plugin_kuwo.models import (
-    KuwoDetailedTrackResource,
-    KuwoSearchSong,
-    KuwoTrackResource,
-)
-from nonebot_plugin_kuwo.utils import format_track_text
+from nonebot.compat import type_validate_python
 
 
-def make_private_event(message: str) -> PrivateMessageEvent:
-    return PrivateMessageEvent.model_validate(
-        {
-            "time": 0,
-            "self_id": 1,
-            "post_type": "message",
-            "sub_type": "friend",
-            "user_id": 10001,
-            "message_type": "private",
-            "message_id": 1,
-            "message": message,
-            "original_message": message,
-            "raw_message": message,
-            "font": 0,
-            "sender": {
-                "user_id": 10001,
-                "nickname": "tester",
-            },
-            "to_me": True,
-        }
+def import_plugin_module():
+    return importlib.import_module("nonebot_plugin_kuwo")
+
+
+def import_config_module():
+    return importlib.import_module("nonebot_plugin_kuwo.config")
+
+
+def import_models_module():
+    return importlib.import_module("nonebot_plugin_kuwo.models")
+
+
+def import_render_module():
+    return importlib.import_module("nonebot_plugin_kuwo.render")
+
+
+def import_utils_module():
+    return importlib.import_module("nonebot_plugin_kuwo.utils")
+
+
+def import_uniseg_module():
+    return importlib.import_module("nonebot_plugin_alconna.uniseg")
+
+
+def import_music_share_module():
+    return importlib.import_module(
+        "nonebot_plugin_alconna.builtins.uniseg.music_share"
     )
 
 
@@ -57,108 +50,98 @@ class DummyMatcher:
         raise MatcherFinished
 
 
+def build_search_song(**overrides: object):
+    models = import_models_module()
+    payload: dict[str, object] = {
+        "MUSICRID": "MUSIC_553152678",
+        "NAME": "Morning Dew Reflection.wav",
+        "ARTIST": "rionos&Kangseoha&Kim Yoon",
+        "ALBUM": "Morning Dew Reflection",
+        "DURATION": "182",
+    }
+    payload.update(overrides)
+    return type_validate_python(models.KuwoSearchSong, payload)
+
+
+def make_arp(**all_matched_args: object):
+    return type("Arp", (), {"all_matched_args": all_matched_args})()
+
+
 @pytest.mark.asyncio
 async def test_kwsearch_command_returns_text_results(
-    app: nonebug.App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nonebot_plugin_kuwo
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    dummy_matcher = DummyMatcher()
 
-    kwsearch = nonebot_plugin_kuwo.kwsearch
-
-    async def fake_search(keyword: str, limit: int) -> list[KuwoSearchSong]:
+    async def fake_search(keyword: str, limit: int):
         assert keyword == "Morning Dew Reflection"
         assert limit == 5
-        return [
-            KuwoSearchSong.model_validate(
-                {
-                    "MUSICRID": "MUSIC_553152678",
-                    "NAME": "Morning Dew Reflection.wav",
-                    "ARTIST": "rionos&Kangseoha&Kim Yoon",
-                    "ALBUM": "Morning Dew Reflection",
-                    "DURATION": "182",
-                }
-            )
-        ]
+        return [build_search_song()]
 
-    monkeypatch.setattr(nonebot_plugin_kuwo, "search_songs", fake_search)
+    monkeypatch.setattr(plugin, "search_songs", fake_search)
+    monkeypatch.setattr(plugin, "kwsearch", dummy_matcher)
     monkeypatch.setattr(
-        nonebot_plugin_kuwo,
+        plugin,
         "get_runtime_config",
-        lambda: Config(
+        lambda: config_module.Config(
             kuwo_search_limit=5,
-            kuwo_list_render_mode=ListRenderMode.TEXT,
-            kuwo_track_render_mode=TrackRenderMode.TEXT,
+            kuwo_list_render_mode=config_module.ListRenderMode.TEXT,
+            kuwo_track_render_mode=config_module.TrackRenderMode.TEXT,
             kuwo_default_quality="standard",
         ),
     )
 
-    event = make_private_event("/kwsearch Morning Dew Reflection")
+    with pytest.raises(MatcherFinished):
+        await plugin.handle_kwsearch(make_arp(keyword=("Morning", "Dew", "Reflection")))
 
-    async with app.test_matcher(kwsearch) as ctx:
-        adapter = ctx.create_adapter(base=Adapter)
-        bot = ctx.create_bot(base=Bot, adapter=adapter, self_id="1")
-        ctx.receive_event(bot, event)
-        ctx.should_call_send(
-            event,
-            "1. 553152678 Morning Dew Reflection.wav-rionos&Kangseoha&Kim Yoon",
-            bot=bot,
-        )
+    assert dummy_matcher.message == (
+        "1. 553152678 Morning Dew Reflection.wav-rionos&Kangseoha&Kim Yoon"
+    )
 
 
 @pytest.mark.asyncio
 async def test_kwsearch_command_returns_image_results(
-    app: nonebug.App,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nonebot_plugin_kuwo
-    import nonebot_plugin_kuwo.render as render_module
-
-    kwsearch = nonebot_plugin_kuwo.kwsearch
+    plugin = import_plugin_module()
+    render_module = import_render_module()
+    config_module = import_config_module()
+    uniseg = import_uniseg_module()
+    dummy_matcher = DummyMatcher()
     render_calls: dict[str, str] = {}
 
-    async def fake_search(keyword: str, limit: int) -> list[KuwoSearchSong]:
+    async def fake_search(keyword: str, limit: int):
         assert keyword == "Morning Dew Reflection"
         assert limit == 5
-        return [
-            KuwoSearchSong.model_validate(
-                {
-                    "MUSICRID": "MUSIC_553152678",
-                    "NAME": "Morning Dew Reflection.wav",
-                    "ARTIST": "rionos&Kangseoha&Kim Yoon",
-                    "ALBUM": "Morning Dew Reflection",
-                    "DURATION": "182",
-                    "web_albumpic_short": "120/s4s64/98/1370027605.jpg",
-                }
-            )
-        ]
+        return [build_search_song(web_albumpic_short="120/s4s64/98/1370027605.jpg")]
 
     async def fake_html_to_pic(**kwargs) -> bytes:
         render_calls["html"] = kwargs["html"]
         render_calls["template_path"] = kwargs["template_path"]
         return b"rendered-image"
 
-    monkeypatch.setattr(nonebot_plugin_kuwo, "search_songs", fake_search)
-    monkeypatch.setattr(render_module, "_load_html_to_pic", lambda: fake_html_to_pic)
+    monkeypatch.setattr(plugin, "search_songs", fake_search)
+    monkeypatch.setattr(render_module, "html_to_pic", fake_html_to_pic)
+    monkeypatch.setattr(plugin, "kwsearch", dummy_matcher)
     monkeypatch.setattr(
-        nonebot_plugin_kuwo,
+        plugin,
         "get_runtime_config",
-        lambda: Config(
+        lambda: config_module.Config(
             kuwo_search_limit=5,
-            kuwo_list_render_mode=ListRenderMode.IMAGE,
-            kuwo_track_render_mode=TrackRenderMode.TEXT,
+            kuwo_list_render_mode=config_module.ListRenderMode.IMAGE,
+            kuwo_track_render_mode=config_module.TrackRenderMode.TEXT,
             kuwo_default_quality="standard",
         ),
     )
 
-    event = make_private_event("/kwsearch Morning Dew Reflection")
-    expected = Message([MessageSegment.image(b"rendered-image")])
+    with pytest.raises(MatcherFinished):
+        await plugin.handle_kwsearch(make_arp(keyword=("Morning", "Dew", "Reflection")))
 
-    async with app.test_matcher(kwsearch) as ctx:
-        adapter = ctx.create_adapter(base=Adapter)
-        bot = ctx.create_bot(base=Bot, adapter=adapter, self_id="1")
-        ctx.receive_event(bot, event)
-        ctx.should_call_send(event, expected, bot=bot)
+    assert dummy_matcher.message == uniseg.UniMessage(
+        [uniseg.Image(raw=b"rendered-image")]
+    )
 
     assert (
         "http://img1.kwcdn.kuwo.cn/star/albumcover/120/s4s64/98/1370027605.jpg"
@@ -168,10 +151,9 @@ async def test_kwsearch_command_returns_image_results(
 
 
 def test_kw_command_parses_quality_option_after_spaced_keyword() -> None:
-    import nonebot_plugin_kuwo
+    plugin = import_plugin_module()
 
-    command = nonebot_plugin_kuwo.kw.command()
-    result = command.parse("/kw Morning Dew Reflection -q lossless")
+    result = plugin.kw.command().parse("/kw Morning Dew Reflection -q lossless")
 
     assert result.matched is True
     assert result.all_matched_args == {
@@ -184,29 +166,22 @@ def test_kw_command_parses_quality_option_after_spaced_keyword() -> None:
 async def test_kw_command_returns_cover_and_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nonebot_plugin_kuwo
-
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    models = import_models_module()
+    utils = import_utils_module()
+    uniseg = import_uniseg_module()
     dummy_matcher = DummyMatcher()
 
-    async def fake_search(keyword: str, limit: int) -> list[KuwoSearchSong]:
+    async def fake_search(keyword: str, limit: int):
         assert keyword == "Morning Dew Reflection"
         assert limit == 1
-        return [
-            KuwoSearchSong.model_validate(
-                {
-                    "MUSICRID": "MUSIC_553152678",
-                    "NAME": "Morning Dew Reflection.wav",
-                    "ARTIST": "rionos&Kangseoha&Kim Yoon",
-                    "ALBUM": "Morning Dew Reflection",
-                    "DURATION": "182",
-                }
-            )
-        ]
+        return [build_search_song()]
 
-    async def fake_get_song_media(rid: str, br: str) -> KuwoTrackResource:
+    async def fake_get_song_media(rid: str, br: str):
         assert rid == "553152678"
         assert br == "2000kflac"
-        return KuwoTrackResource(
+        return models.KuwoTrackResource(
             rid=rid,
             format="flac",
             ekey="sample-ekey",
@@ -216,26 +191,26 @@ async def test_kw_command_returns_cover_and_text(
             cover_url="http://example.com/cover.jpg",
         )
 
-    monkeypatch.setattr(nonebot_plugin_kuwo, "search_songs", fake_search)
-    monkeypatch.setattr(nonebot_plugin_kuwo, "get_song_media", fake_get_song_media)
-    monkeypatch.setattr(nonebot_plugin_kuwo, "kw", dummy_matcher)
+    monkeypatch.setattr(plugin, "search_songs", fake_search)
+    monkeypatch.setattr(plugin, "get_song_media", fake_get_song_media)
+    monkeypatch.setattr(plugin, "kw", dummy_matcher)
     monkeypatch.setattr(
-        nonebot_plugin_kuwo,
+        plugin,
         "get_runtime_config",
-        lambda: Config(
+        lambda: config_module.Config(
             kuwo_search_limit=5,
-            kuwo_list_render_mode=ListRenderMode.TEXT,
-            kuwo_track_render_mode=TrackRenderMode.TEXT,
+            kuwo_list_render_mode=config_module.ListRenderMode.TEXT,
+            kuwo_track_render_mode=config_module.TrackRenderMode.TEXT,
             kuwo_default_quality="lossless",
         ),
     )
 
-    expected = Message(
+    expected = uniseg.UniMessage(
         [
-            MessageSegment.image("http://example.com/cover.jpg"),
-            MessageSegment.text(
+            uniseg.Image(url="http://example.com/cover.jpg"),
+            uniseg.Text(
                 "\n"
-                + format_track_text(
+                + utils.format_track_text(
                     rid="553152678",
                     bitrate=2000,
                     duration=242,
@@ -249,12 +224,10 @@ async def test_kw_command_returns_cover_and_text(
         ]
     )
 
-    arp = type(
-        "Arp", (), {"all_matched_args": {"keyword": ("Morning", "Dew", "Reflection")}}
-    )()
+    arp = make_arp(keyword=("Morning", "Dew", "Reflection"))
 
     with pytest.raises(MatcherFinished):
-        await nonebot_plugin_kuwo.handle_kw(arp)
+        await plugin.handle_kw(arp)
 
     assert dummy_matcher.message == expected
 
@@ -263,29 +236,22 @@ async def test_kw_command_returns_cover_and_text(
 async def test_kw_command_returns_music_card(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nonebot_plugin_kuwo
-
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    models = import_models_module()
+    music_share = import_music_share_module()
+    uniseg = import_uniseg_module()
     dummy_matcher = DummyMatcher()
 
-    async def fake_search(keyword: str, limit: int) -> list[KuwoSearchSong]:
+    async def fake_search(keyword: str, limit: int):
         assert keyword == "Morning Dew Reflection"
         assert limit == 1
-        return [
-            KuwoSearchSong.model_validate(
-                {
-                    "MUSICRID": "MUSIC_553152678",
-                    "NAME": "Morning Dew Reflection.wav",
-                    "ARTIST": "rionos&Kangseoha&Kim Yoon",
-                    "ALBUM": "Morning Dew Reflection",
-                    "DURATION": "182",
-                }
-            )
-        ]
+        return [build_search_song()]
 
-    async def fake_get_song_media(rid: str, br: str) -> KuwoTrackResource:
+    async def fake_get_song_media(rid: str, br: str):
         assert rid == "553152678"
         assert br == "320kmp3"
-        return KuwoTrackResource(
+        return models.KuwoTrackResource(
             rid=rid,
             format="mp3",
             bitrate=320,
@@ -294,45 +260,37 @@ async def test_kw_command_returns_music_card(
             cover_url="http://example.com/cover.jpg",
         )
 
-    monkeypatch.setattr(nonebot_plugin_kuwo, "search_songs", fake_search)
-    monkeypatch.setattr(nonebot_plugin_kuwo, "get_song_media", fake_get_song_media)
-    monkeypatch.setattr(nonebot_plugin_kuwo, "kw", dummy_matcher)
+    monkeypatch.setattr(plugin, "search_songs", fake_search)
+    monkeypatch.setattr(plugin, "get_song_media", fake_get_song_media)
+    monkeypatch.setattr(plugin, "kw", dummy_matcher)
     monkeypatch.setattr(
-        nonebot_plugin_kuwo,
+        plugin,
         "get_runtime_config",
-        lambda: Config(
+        lambda: config_module.Config(
             kuwo_search_limit=5,
-            kuwo_list_render_mode=ListRenderMode.IMAGE,
-            kuwo_track_render_mode=TrackRenderMode.CARD,
+            kuwo_list_render_mode=config_module.ListRenderMode.IMAGE,
+            kuwo_track_render_mode=config_module.TrackRenderMode.CARD,
             kuwo_default_quality="standard",
         ),
     )
 
-    expected = Message(
+    expected = uniseg.UniMessage(
         [
-            MessageSegment.music_custom(
+            music_share.MusicShare(
+                kind=music_share.MusicShareKind.Custom,
                 url="http://example.com/song.mp3",
                 audio="http://example.com/song.mp3",
                 title="Morning Dew Reflection.wav",
                 content="rionos&Kangseoha&Kim Yoon | Morning Dew Reflection",
-                img_url="http://example.com/cover.jpg",
+                thumbnail="http://example.com/cover.jpg",
             )
         ]
     )
 
-    arp = type(
-        "Arp",
-        (),
-        {
-            "all_matched_args": {
-                "keyword": ("Morning", "Dew", "Reflection"),
-                "quality": "exhigh",
-            }
-        },
-    )()
+    arp = make_arp(keyword=("Morning", "Dew", "Reflection"), quality="exhigh")
 
     with pytest.raises(MatcherFinished):
-        await nonebot_plugin_kuwo.handle_kw(arp)
+        await plugin.handle_kw(arp)
 
     assert dummy_matcher.message == expected
 
@@ -341,29 +299,21 @@ async def test_kw_command_returns_music_card(
 async def test_kw_command_returns_record_and_forces_standard_quality(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nonebot_plugin_kuwo
-
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    models = import_models_module()
+    uniseg = import_uniseg_module()
     dummy_matcher = DummyMatcher()
 
-    async def fake_search(keyword: str, limit: int) -> list[KuwoSearchSong]:
+    async def fake_search(keyword: str, limit: int):
         assert keyword == "Morning Dew Reflection"
         assert limit == 1
-        return [
-            KuwoSearchSong.model_validate(
-                {
-                    "MUSICRID": "MUSIC_553152678",
-                    "NAME": "Morning Dew Reflection.wav",
-                    "ARTIST": "rionos&Kangseoha&Kim Yoon",
-                    "ALBUM": "Morning Dew Reflection",
-                    "DURATION": "182",
-                }
-            )
-        ]
+        return [build_search_song()]
 
-    async def fake_get_song_media(rid: str, br: str) -> KuwoTrackResource:
+    async def fake_get_song_media(rid: str, br: str):
         assert rid == "553152678"
         assert br == "128kmp3"
-        return KuwoTrackResource(
+        return models.KuwoTrackResource(
             rid=rid,
             format="mp3",
             bitrate=128,
@@ -372,36 +322,27 @@ async def test_kw_command_returns_record_and_forces_standard_quality(
             cover_url="http://example.com/cover.jpg",
         )
 
-    monkeypatch.setattr(nonebot_plugin_kuwo, "search_songs", fake_search)
-    monkeypatch.setattr(nonebot_plugin_kuwo, "get_song_media", fake_get_song_media)
-    monkeypatch.setattr(nonebot_plugin_kuwo, "kw", dummy_matcher)
+    monkeypatch.setattr(plugin, "search_songs", fake_search)
+    monkeypatch.setattr(plugin, "get_song_media", fake_get_song_media)
+    monkeypatch.setattr(plugin, "kw", dummy_matcher)
     monkeypatch.setattr(
-        nonebot_plugin_kuwo,
+        plugin,
         "get_runtime_config",
-        lambda: Config(
+        lambda: config_module.Config(
             kuwo_search_limit=5,
-            kuwo_list_render_mode=ListRenderMode.TEXT,
-            kuwo_track_render_mode=TrackRenderMode.RECORD,
+            kuwo_list_render_mode=config_module.ListRenderMode.TEXT,
+            kuwo_track_render_mode=config_module.TrackRenderMode.RECORD,
             kuwo_default_quality="lossless",
         ),
     )
 
-    arp = type(
-        "Arp",
-        (),
-        {
-            "all_matched_args": {
-                "keyword": ("Morning", "Dew", "Reflection"),
-                "quality": "lossless",
-            }
-        },
-    )()
+    arp = make_arp(keyword=("Morning", "Dew", "Reflection"), quality="lossless")
 
     with pytest.raises(MatcherFinished):
-        await nonebot_plugin_kuwo.handle_kw(arp)
+        await plugin.handle_kw(arp)
 
-    assert dummy_matcher.message == Message(
-        [MessageSegment.record("http://example.com/song.mp3")]
+    assert dummy_matcher.message == uniseg.UniMessage(
+        [uniseg.Voice(url="http://example.com/song.mp3")]
     )
 
 
@@ -409,30 +350,22 @@ async def test_kw_command_returns_record_and_forces_standard_quality(
 async def test_kw_command_returns_file_segment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nonebot_plugin_kuwo
-
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    models = import_models_module()
+    uniseg = import_uniseg_module()
     dummy_matcher = DummyMatcher()
     expected_path = Path("C:/tmp/553152678_2000.flac")
 
-    async def fake_search(keyword: str, limit: int) -> list[KuwoSearchSong]:
+    async def fake_search(keyword: str, limit: int):
         assert keyword == "Morning Dew Reflection"
         assert limit == 1
-        return [
-            KuwoSearchSong.model_validate(
-                {
-                    "MUSICRID": "MUSIC_553152678",
-                    "NAME": "Morning Dew Reflection.wav",
-                    "ARTIST": "rionos&Kangseoha&Kim Yoon",
-                    "ALBUM": "Morning Dew Reflection",
-                    "DURATION": "182",
-                }
-            )
-        ]
+        return [build_search_song()]
 
-    async def fake_get_song_media(rid: str, br: str) -> KuwoTrackResource:
+    async def fake_get_song_media(rid: str, br: str):
         assert rid == "553152678"
         assert br == "2000kflac"
-        return KuwoTrackResource(
+        return models.KuwoTrackResource(
             rid=rid,
             format="flac",
             bitrate=2000,
@@ -455,41 +388,28 @@ async def test_kw_command_returns_file_segment(
         assert ekey is None
         return expected_path
 
-    monkeypatch.setattr(nonebot_plugin_kuwo, "search_songs", fake_search)
-    monkeypatch.setattr(nonebot_plugin_kuwo, "get_song_media", fake_get_song_media)
+    monkeypatch.setattr(plugin, "search_songs", fake_search)
+    monkeypatch.setattr(plugin, "get_song_media", fake_get_song_media)
+    monkeypatch.setattr(plugin, "download_track_file", fake_download_track_file)
+    monkeypatch.setattr(plugin, "kw", dummy_matcher)
     monkeypatch.setattr(
-        nonebot_plugin_kuwo,
-        "download_track_file",
-        fake_download_track_file,
-    )
-    monkeypatch.setattr(nonebot_plugin_kuwo, "kw", dummy_matcher)
-    monkeypatch.setattr(
-        nonebot_plugin_kuwo,
+        plugin,
         "get_runtime_config",
-        lambda: Config(
+        lambda: config_module.Config(
             kuwo_search_limit=5,
-            kuwo_list_render_mode=ListRenderMode.TEXT,
-            kuwo_track_render_mode=TrackRenderMode.FILE,
+            kuwo_list_render_mode=config_module.ListRenderMode.TEXT,
+            kuwo_track_render_mode=config_module.TrackRenderMode.FILE,
             kuwo_default_quality="lossless",
         ),
     )
 
-    arp = type(
-        "Arp",
-        (),
-        {
-            "all_matched_args": {
-                "keyword": ("Morning", "Dew", "Reflection"),
-                "quality": "lossless",
-            }
-        },
-    )()
+    arp = make_arp(keyword=("Morning", "Dew", "Reflection"), quality="lossless")
 
     with pytest.raises(MatcherFinished):
-        await nonebot_plugin_kuwo.handle_kw(arp)
+        await plugin.handle_kw(arp)
 
-    assert dummy_matcher.message == Message(
-        [MessageSegment("file", {"file": str(expected_path)})]
+    assert dummy_matcher.message == uniseg.UniMessage(
+        [uniseg.File(path=expected_path, name=expected_path.name)]
     )
 
 
@@ -497,30 +417,22 @@ async def test_kw_command_returns_file_segment(
 async def test_kw_command_returns_file_segment_for_mflac_after_decrypt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nonebot_plugin_kuwo
-
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    models = import_models_module()
+    uniseg = import_uniseg_module()
     dummy_matcher = DummyMatcher()
     expected_path = Path("C:/tmp/553152678_20201.flac")
 
-    async def fake_search(keyword: str, limit: int) -> list[KuwoSearchSong]:
+    async def fake_search(keyword: str, limit: int):
         assert keyword == "Morning Dew Reflection"
         assert limit == 1
-        return [
-            KuwoSearchSong.model_validate(
-                {
-                    "MUSICRID": "MUSIC_553152678",
-                    "NAME": "Morning Dew Reflection.wav",
-                    "ARTIST": "rionos&Kangseoha&Kim Yoon",
-                    "ALBUM": "Morning Dew Reflection",
-                    "DURATION": "182",
-                }
-            )
-        ]
+        return [build_search_song()]
 
-    async def fake_get_song_media(rid: str, br: str) -> KuwoTrackResource:
+    async def fake_get_song_media(rid: str, br: str):
         assert rid == "553152678"
         assert br == "20201kmflac"
-        return KuwoTrackResource(
+        return models.KuwoTrackResource(
             rid=rid,
             format="mflac",
             ekey="sample-ekey",
@@ -544,41 +456,28 @@ async def test_kw_command_returns_file_segment_for_mflac_after_decrypt(
         assert ekey == "sample-ekey"
         return expected_path
 
-    monkeypatch.setattr(nonebot_plugin_kuwo, "search_songs", fake_search)
-    monkeypatch.setattr(nonebot_plugin_kuwo, "get_song_media", fake_get_song_media)
+    monkeypatch.setattr(plugin, "search_songs", fake_search)
+    monkeypatch.setattr(plugin, "get_song_media", fake_get_song_media)
+    monkeypatch.setattr(plugin, "download_track_file", fake_download_track_file)
+    monkeypatch.setattr(plugin, "kw", dummy_matcher)
     monkeypatch.setattr(
-        nonebot_plugin_kuwo,
-        "download_track_file",
-        fake_download_track_file,
-    )
-    monkeypatch.setattr(nonebot_plugin_kuwo, "kw", dummy_matcher)
-    monkeypatch.setattr(
-        nonebot_plugin_kuwo,
+        plugin,
         "get_runtime_config",
-        lambda: Config(
+        lambda: config_module.Config(
             kuwo_search_limit=5,
-            kuwo_list_render_mode=ListRenderMode.TEXT,
-            kuwo_track_render_mode=TrackRenderMode.FILE,
+            kuwo_list_render_mode=config_module.ListRenderMode.TEXT,
+            kuwo_track_render_mode=config_module.TrackRenderMode.FILE,
             kuwo_default_quality="hifi",
         ),
     )
 
-    arp = type(
-        "Arp",
-        (),
-        {
-            "all_matched_args": {
-                "keyword": ("Morning", "Dew", "Reflection"),
-                "quality": "hifi",
-            }
-        },
-    )()
+    arp = make_arp(keyword=("Morning", "Dew", "Reflection"), quality="hifi")
 
     with pytest.raises(MatcherFinished):
-        await nonebot_plugin_kuwo.handle_kw(arp)
+        await plugin.handle_kw(arp)
 
-    assert dummy_matcher.message == Message(
-        [MessageSegment("file", {"file": str(expected_path)})]
+    assert dummy_matcher.message == uniseg.UniMessage(
+        [uniseg.File(path=expected_path, name=expected_path.name)]
     )
 
 
@@ -586,16 +485,17 @@ async def test_kw_command_returns_file_segment_for_mflac_after_decrypt(
 async def test_kwid_command_returns_cover_and_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nonebot_plugin_kuwo
-
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    models = import_models_module()
+    utils = import_utils_module()
+    uniseg = import_uniseg_module()
     dummy_matcher = DummyMatcher()
 
-    async def fake_get_song_detailed_media(
-        rid: str, br: str
-    ) -> KuwoDetailedTrackResource:
+    async def fake_get_song_detailed_media(rid: str, br: str):
         assert rid == "553152678"
         assert br == "128kmp3"
-        return KuwoDetailedTrackResource(
+        return models.KuwoDetailedTrackResource(
             rid=rid,
             format="mp3",
             ekey="sample-ekey",
@@ -608,29 +508,25 @@ async def test_kwid_command_returns_cover_and_text(
             album="Summer Pockets REFLECTION BLUE Original SoundTrack",
         )
 
+    monkeypatch.setattr(plugin, "get_song_detailed_media", fake_get_song_detailed_media)
+    monkeypatch.setattr(plugin, "kwid", dummy_matcher)
     monkeypatch.setattr(
-        nonebot_plugin_kuwo,
-        "get_song_detailed_media",
-        fake_get_song_detailed_media,
-    )
-    monkeypatch.setattr(nonebot_plugin_kuwo, "kwid", dummy_matcher)
-    monkeypatch.setattr(
-        nonebot_plugin_kuwo,
+        plugin,
         "get_runtime_config",
-        lambda: Config(
+        lambda: config_module.Config(
             kuwo_search_limit=5,
-            kuwo_list_render_mode=ListRenderMode.TEXT,
-            kuwo_track_render_mode=TrackRenderMode.TEXT,
+            kuwo_list_render_mode=config_module.ListRenderMode.TEXT,
+            kuwo_track_render_mode=config_module.TrackRenderMode.TEXT,
             kuwo_default_quality="standard",
         ),
     )
 
-    expected = Message(
+    expected = uniseg.UniMessage(
         [
-            MessageSegment.image("http://example.com/album.jpg"),
-            MessageSegment.text(
+            uniseg.Image(url="http://example.com/album.jpg"),
+            uniseg.Text(
                 "\n"
-                + format_track_text(
+                + utils.format_track_text(
                     rid="553152678",
                     bitrate=128,
                     duration=182,
@@ -644,10 +540,10 @@ async def test_kwid_command_returns_cover_and_text(
         ]
     )
 
-    arp = type("Arp", (), {"all_matched_args": {"rid": "MUSIC_553152678"}})()
+    arp = make_arp(rid="MUSIC_553152678")
 
     with pytest.raises(MatcherFinished):
-        await nonebot_plugin_kuwo.handle_kwid(arp)
+        await plugin.handle_kwid(arp)
 
     assert dummy_matcher.message == expected
 
@@ -656,16 +552,17 @@ async def test_kwid_command_returns_cover_and_text(
 async def test_kwid_command_returns_music_card(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nonebot_plugin_kuwo
-
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    models = import_models_module()
+    music_share = import_music_share_module()
+    uniseg = import_uniseg_module()
     dummy_matcher = DummyMatcher()
 
-    async def fake_get_song_detailed_media(
-        rid: str, br: str
-    ) -> KuwoDetailedTrackResource:
+    async def fake_get_song_detailed_media(rid: str, br: str):
         assert rid == "553152678"
         assert br == "2000kflac"
-        return KuwoDetailedTrackResource(
+        return models.KuwoDetailedTrackResource(
             rid=rid,
             format="flac",
             bitrate=2000,
@@ -677,26 +574,23 @@ async def test_kwid_command_returns_music_card(
             album="Summer Pockets REFLECTION BLUE Original SoundTrack",
         )
 
+    monkeypatch.setattr(plugin, "get_song_detailed_media", fake_get_song_detailed_media)
+    monkeypatch.setattr(plugin, "kwid", dummy_matcher)
     monkeypatch.setattr(
-        nonebot_plugin_kuwo,
-        "get_song_detailed_media",
-        fake_get_song_detailed_media,
-    )
-    monkeypatch.setattr(nonebot_plugin_kuwo, "kwid", dummy_matcher)
-    monkeypatch.setattr(
-        nonebot_plugin_kuwo,
+        plugin,
         "get_runtime_config",
-        lambda: Config(
+        lambda: config_module.Config(
             kuwo_search_limit=5,
-            kuwo_list_render_mode=ListRenderMode.IMAGE,
-            kuwo_track_render_mode=TrackRenderMode.CARD,
+            kuwo_list_render_mode=config_module.ListRenderMode.IMAGE,
+            kuwo_track_render_mode=config_module.TrackRenderMode.CARD,
             kuwo_default_quality="standard",
         ),
     )
 
-    expected = Message(
+    expected = uniseg.UniMessage(
         [
-            MessageSegment.music_custom(
+            music_share.MusicShare(
+                kind=music_share.MusicShareKind.Custom,
                 url="http://example.com/song-lossless.flac",
                 audio="http://example.com/song-lossless.flac",
                 title="Pocket wo Fukurasete ~Sea, you again~",
@@ -704,19 +598,15 @@ async def test_kwid_command_returns_music_card(
                     "VISUAL ARTS&Key Sounds Label&rionos | "
                     "Summer Pockets REFLECTION BLUE Original SoundTrack"
                 ),
-                img_url="http://example.com/album.jpg",
+                thumbnail="http://example.com/album.jpg",
             )
         ]
     )
 
-    arp = type(
-        "Arp",
-        (),
-        {"all_matched_args": {"rid": "MUSIC_553152678", "quality": "hifi"}},
-    )()
+    arp = make_arp(rid="MUSIC_553152678", quality="hifi")
 
     with pytest.raises(MatcherFinished):
-        await nonebot_plugin_kuwo.handle_kwid(arp)
+        await plugin.handle_kwid(arp)
 
     assert dummy_matcher.message == expected
 
@@ -725,16 +615,16 @@ async def test_kwid_command_returns_music_card(
 async def test_kwid_command_returns_record_and_forces_standard_quality(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nonebot_plugin_kuwo
-
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    models = import_models_module()
+    uniseg = import_uniseg_module()
     dummy_matcher = DummyMatcher()
 
-    async def fake_get_song_detailed_media(
-        rid: str, br: str
-    ) -> KuwoDetailedTrackResource:
+    async def fake_get_song_detailed_media(rid: str, br: str):
         assert rid == "553152678"
         assert br == "128kmp3"
-        return KuwoDetailedTrackResource(
+        return models.KuwoDetailedTrackResource(
             rid=rid,
             format="mp3",
             bitrate=128,
@@ -746,30 +636,26 @@ async def test_kwid_command_returns_record_and_forces_standard_quality(
             album="Summer Pockets REFLECTION BLUE Original SoundTrack",
         )
 
+    monkeypatch.setattr(plugin, "get_song_detailed_media", fake_get_song_detailed_media)
+    monkeypatch.setattr(plugin, "kwid", dummy_matcher)
     monkeypatch.setattr(
-        nonebot_plugin_kuwo,
-        "get_song_detailed_media",
-        fake_get_song_detailed_media,
-    )
-    monkeypatch.setattr(nonebot_plugin_kuwo, "kwid", dummy_matcher)
-    monkeypatch.setattr(
-        nonebot_plugin_kuwo,
+        plugin,
         "get_runtime_config",
-        lambda: Config(
+        lambda: config_module.Config(
             kuwo_search_limit=5,
-            kuwo_list_render_mode=ListRenderMode.TEXT,
-            kuwo_track_render_mode=TrackRenderMode.RECORD,
+            kuwo_list_render_mode=config_module.ListRenderMode.TEXT,
+            kuwo_track_render_mode=config_module.TrackRenderMode.RECORD,
             kuwo_default_quality="lossless",
         ),
     )
 
-    arp = type("Arp", (), {"all_matched_args": {"rid": "MUSIC_553152678"}})()
+    arp = make_arp(rid="MUSIC_553152678")
 
     with pytest.raises(MatcherFinished):
-        await nonebot_plugin_kuwo.handle_kwid(arp)
+        await plugin.handle_kwid(arp)
 
-    assert dummy_matcher.message == Message(
-        [MessageSegment.record("http://example.com/song.mp3")]
+    assert dummy_matcher.message == uniseg.UniMessage(
+        [uniseg.Voice(url="http://example.com/song.mp3")]
     )
 
 
@@ -777,17 +663,17 @@ async def test_kwid_command_returns_record_and_forces_standard_quality(
 async def test_kwid_command_returns_file_segment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nonebot_plugin_kuwo
-
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    models = import_models_module()
+    uniseg = import_uniseg_module()
     dummy_matcher = DummyMatcher()
     expected_path = Path("C:/tmp/320490745_2000.flac")
 
-    async def fake_get_song_detailed_media(
-        rid: str, br: str
-    ) -> KuwoDetailedTrackResource:
+    async def fake_get_song_detailed_media(rid: str, br: str):
         assert rid == "320490745"
         assert br == "2000kflac"
-        return KuwoDetailedTrackResource(
+        return models.KuwoDetailedTrackResource(
             rid=rid,
             format="flac",
             bitrate=2000,
@@ -813,33 +699,25 @@ async def test_kwid_command_returns_file_segment(
         assert ekey is None
         return expected_path
 
+    monkeypatch.setattr(plugin, "get_song_detailed_media", fake_get_song_detailed_media)
+    monkeypatch.setattr(plugin, "download_track_file", fake_download_track_file)
+    monkeypatch.setattr(plugin, "kwid", dummy_matcher)
     monkeypatch.setattr(
-        nonebot_plugin_kuwo,
-        "get_song_detailed_media",
-        fake_get_song_detailed_media,
-    )
-    monkeypatch.setattr(
-        nonebot_plugin_kuwo,
-        "download_track_file",
-        fake_download_track_file,
-    )
-    monkeypatch.setattr(nonebot_plugin_kuwo, "kwid", dummy_matcher)
-    monkeypatch.setattr(
-        nonebot_plugin_kuwo,
+        plugin,
         "get_runtime_config",
-        lambda: Config(
+        lambda: config_module.Config(
             kuwo_search_limit=5,
-            kuwo_list_render_mode=ListRenderMode.TEXT,
-            kuwo_track_render_mode=TrackRenderMode.FILE,
+            kuwo_list_render_mode=config_module.ListRenderMode.TEXT,
+            kuwo_track_render_mode=config_module.TrackRenderMode.FILE,
             kuwo_default_quality="lossless",
         ),
     )
 
-    arp = type("Arp", (), {"all_matched_args": {"rid": "320490745"}})()
+    arp = make_arp(rid="320490745")
 
     with pytest.raises(MatcherFinished):
-        await nonebot_plugin_kuwo.handle_kwid(arp)
+        await plugin.handle_kwid(arp)
 
-    assert dummy_matcher.message == Message(
-        [MessageSegment("file", {"file": str(expected_path)})]
+    assert dummy_matcher.message == uniseg.UniMessage(
+        [uniseg.File(path=expected_path, name=expected_path.name)]
     )

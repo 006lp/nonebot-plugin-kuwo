@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 from __future__ import annotations
 
 import asyncio
@@ -8,7 +9,12 @@ from urllib.parse import urlparse
 
 import httpx
 from nonebot import logger, require
+from nonebot.compat import type_validate_python
 from pydantic import ValidationError
+
+require("nonebot_plugin_localstore")
+
+from nonebot_plugin_localstore import get_plugin_cache_dir
 
 from .config import get_runtime_config
 from .models import (
@@ -29,13 +35,13 @@ COVER_API_URL = "http://artistpicserver.kuwo.cn/pic.web"
 DETAIL_API_URL = "http://musicpay.kuwo.cn/music.pay"
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 SUPPORTED_TRACK_FILE_FORMATS = {"mp3", "flac", "aac", "ogg", "wav"}
-TRACK_CACHE_PLUGIN_NAME = "nonebot_plugin_kuwo"
 TRACK_CACHE_TEMP_SUFFIX = ".part"
 SECONDS_PER_DAY = 24 * 60 * 60
 
 _client: httpx.AsyncClient | None = None
 _client_lock = asyncio.Lock()
 _track_file_operation_lock = asyncio.Lock()
+_track_file_cache_dir: Path | None = None
 
 
 class KuwoSearchError(Exception):
@@ -64,6 +70,28 @@ class KuwoTrackResponseError(KuwoTrackError):
 
 class KuwoUnsupportedFormatError(KuwoTrackError):
     """Raised when the track format cannot be sent as a playable file yet."""
+
+
+def get_track_file_cache_dir() -> Path:
+    global _track_file_cache_dir
+    if _track_file_cache_dir is None:
+        _track_file_cache_dir = get_plugin_cache_dir() / "tracks"
+        logger.debug(
+            "Resolved kuwo track cache directory: path={}",
+            str(_track_file_cache_dir),
+        )
+    return _track_file_cache_dir
+
+
+def initialize_track_cache_dir() -> Path:
+    track_file_cache_dir = get_track_file_cache_dir()
+    if not track_file_cache_dir.exists():
+        track_file_cache_dir.mkdir(parents=True, exist_ok=True)
+        logger.debug(
+            "Initialized kuwo track cache directory: path={}",
+            str(track_file_cache_dir),
+        )
+    return track_file_cache_dir
 
 
 async def get_http_client() -> httpx.AsyncClient:
@@ -124,7 +152,7 @@ async def search_songs(keyword: str, limit: int) -> list[KuwoSearchSong]:
         raise KuwoSearchResponseError("search response is not valid json") from exc
 
     try:
-        search_response = KuwoSearchResponse.model_validate(payload)
+        search_response = type_validate_python(KuwoSearchResponse, payload)
     except ValidationError as exc:
         raise KuwoSearchResponseError("search response schema mismatch") from exc
     logger.info(
@@ -192,7 +220,7 @@ async def get_song_link(rid: str, br: str) -> KuwoTrackLinkData:
         raise KuwoTrackResponseError("track response is not valid json") from exc
 
     try:
-        track_response = KuwoTrackLinkResponse.model_validate(payload)
+        track_response = type_validate_python(KuwoTrackLinkResponse, payload)
     except ValidationError as exc:
         raise KuwoTrackResponseError("track response schema mismatch") from exc
 
@@ -221,7 +249,7 @@ async def get_song_detail(rid: str) -> KuwoTrackDetail:
         raise KuwoTrackResponseError("track detail response is not valid json") from exc
 
     try:
-        detail_response = KuwoTrackDetailResponse.model_validate(payload)
+        detail_response = type_validate_python(KuwoTrackDetailResponse, payload)
     except ValidationError as exc:
         raise KuwoTrackResponseError("track detail response schema mismatch") from exc
 
@@ -252,23 +280,21 @@ async def get_song_cover(rid: str) -> str | None:
     return cover_url or None
 
 
-def _get_track_file_cache_dir() -> Path:
-    require("nonebot_plugin_localstore")
-
-    import nonebot_plugin_localstore as store
-
-    cache_dir = store.get_cache_dir(TRACK_CACHE_PLUGIN_NAME) / "tracks"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir
-
-
 def _get_track_file_temp_path(file_path: Path) -> Path:
     return file_path.with_name(f"{file_path.name}{TRACK_CACHE_TEMP_SUFFIX}")
 
 
+def _remove_path(file_path: Path) -> None:
+    file_path.unlink(missing_ok=True)
+
+
+def _replace_path(source_path: Path, target_path: Path) -> Path:
+    return source_path.replace(target_path)
+
+
 def _delete_track_cache_path(file_path: Path, reason: str) -> None:
     try:
-        file_path.unlink(missing_ok=True)
+        _remove_path(file_path)
     except OSError as exc:
         logger.warning(
             "Failed to delete kuwo track cache file: path={}, reason={}, error={}",
@@ -384,7 +410,7 @@ def resolve_track_file_extension(direct_url: str, format_name: str) -> str:
 
 async def _download_file_to_path(direct_url: str, file_path: Path) -> Path:
     temp_path = _get_track_file_temp_path(file_path)
-    temp_path.unlink(missing_ok=True)
+    _remove_path(temp_path)
     client = await get_http_client()
     try:
         async with client.stream("GET", direct_url) as response:
@@ -393,20 +419,20 @@ async def _download_file_to_path(direct_url: str, file_path: Path) -> Path:
                 async for chunk in response.aiter_bytes():
                     file.write(chunk)
     except httpx.HTTPError as exc:
-        temp_path.unlink(missing_ok=True)
+        _remove_path(temp_path)
         raise KuwoTrackNetworkError("track file download failed") from exc
     except OSError as exc:
-        temp_path.unlink(missing_ok=True)
+        _remove_path(temp_path)
         raise KuwoTrackResponseError("track file write failed") from exc
 
     if temp_path.stat().st_size <= 0:
-        temp_path.unlink(missing_ok=True)
+        _remove_path(temp_path)
         raise KuwoTrackResponseError("track file download is empty")
 
     try:
-        temp_path.replace(file_path)
+        _replace_path(temp_path, file_path)
     except OSError as exc:
-        temp_path.unlink(missing_ok=True)
+        _remove_path(temp_path)
         raise KuwoTrackResponseError("track file finalize failed") from exc
     return file_path
 
@@ -420,7 +446,7 @@ async def download_track_file(
 ) -> Path:
     async with _track_file_operation_lock:
         extension = resolve_track_file_extension(direct_url, format_name)
-        track_file_cache_dir = _get_track_file_cache_dir()
+        track_file_cache_dir = initialize_track_cache_dir()
 
         if extension == "mflac":
             if not ekey:
@@ -435,7 +461,7 @@ async def download_track_file(
             )
 
             if decrypted_path.is_file() and decrypted_path.stat().st_size > 0:
-                encrypted_path.unlink(missing_ok=True)
+                _remove_path(encrypted_path)
                 _touch_track_cache_path(decrypted_path)
                 logger.info(
                     "Reusing cached decrypted kuwo track file: rid={}, path={}",
@@ -453,23 +479,23 @@ async def download_track_file(
                 )
                 await _download_file_to_path(direct_url, encrypted_path)
 
-            decrypted_temp_path.unlink(missing_ok=True)
+            _remove_path(decrypted_temp_path)
             try:
                 decrypt_mflac_file(encrypted_path, decrypted_temp_path, ekey)
             except (OSError, ValueError) as exc:
-                decrypted_temp_path.unlink(missing_ok=True)
+                _remove_path(decrypted_temp_path)
                 raise KuwoTrackResponseError("track file decrypt failed") from exc
 
             if decrypted_temp_path.stat().st_size <= 0:
-                decrypted_temp_path.unlink(missing_ok=True)
+                _remove_path(decrypted_temp_path)
                 raise KuwoTrackResponseError("track file decrypt is empty")
 
             try:
-                decrypted_temp_path.replace(decrypted_path)
+                _replace_path(decrypted_temp_path, decrypted_path)
             except OSError as exc:
-                decrypted_temp_path.unlink(missing_ok=True)
+                _remove_path(decrypted_temp_path)
                 raise KuwoTrackResponseError("track file finalize failed") from exc
-            encrypted_path.unlink(missing_ok=True)
+            _remove_path(encrypted_path)
             _cleanup_track_file_cache(
                 track_file_cache_dir,
                 keep_paths={decrypted_path},

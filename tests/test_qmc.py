@@ -3,13 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
-from nonebot_plugin_kuwo.qmc import (
-    decrypt_mflac_file,
-    decrypt_qmc_bytes,
-    derive_qmc_key,
-    extract_qmc_raw_key_from_ekey,
-)
-
 SAMPLE_MFLAC_PATH = Path(
     "tests/AIM0000WoYYr0hishZ3b6ff42855ecade7711348a59f29bca0.mflac"
 )
@@ -30,6 +23,12 @@ KUWO_SAMPLE_EKEY = (
 )
 
 
+def import_qmc_module():
+    import nonebot_plugin_kuwo.qmc as qmc_module
+
+    return qmc_module
+
+
 def make_workspace_tmp_path(name: str) -> Path:
     tmp_path = (Path("tests") / ".tmp" / f"{name}_{uuid4().hex}").resolve()
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -37,7 +36,8 @@ def make_workspace_tmp_path(name: str) -> Path:
 
 
 def test_extract_qmc_raw_key_from_ekey_uses_trailing_704_chars() -> None:
-    raw_key = extract_qmc_raw_key_from_ekey(KUWO_SAMPLE_EKEY)
+    qmc_module = import_qmc_module()
+    raw_key = qmc_module.extract_qmc_raw_key_from_ekey(KUWO_SAMPLE_EKEY)
 
     assert len(raw_key) == 704
     assert raw_key.startswith(b"ajE5Nk5UOUZgLQNW")
@@ -45,23 +45,26 @@ def test_extract_qmc_raw_key_from_ekey_uses_trailing_704_chars() -> None:
 
 
 def test_derive_qmc_key_returns_decoded_stream_key() -> None:
-    raw_key = extract_qmc_raw_key_from_ekey(KUWO_SAMPLE_EKEY)
-    derived_key = derive_qmc_key(raw_key)
+    qmc_module = import_qmc_module()
+    raw_key = qmc_module.extract_qmc_raw_key_from_ekey(KUWO_SAMPLE_EKEY)
+    derived_key = qmc_module.derive_qmc_key(raw_key)
 
     assert isinstance(derived_key, bytes)
     assert len(derived_key) > 300
 
 
 def test_decrypt_qmc_bytes_can_decrypt_real_sample_header() -> None:
-    raw_key = extract_qmc_raw_key_from_ekey(KUWO_SAMPLE_EKEY)
+    qmc_module = import_qmc_module()
+    raw_key = qmc_module.extract_qmc_raw_key_from_ekey(KUWO_SAMPLE_EKEY)
     encrypted_head = SAMPLE_MFLAC_PATH.read_bytes()[:65536]
 
-    decrypted_head = decrypt_qmc_bytes(encrypted_head, raw_key)
+    decrypted_head = qmc_module.decrypt_qmc_bytes(encrypted_head, raw_key)
 
     assert decrypted_head.startswith(b"fLaC")
 
 
 def test_decrypt_mflac_file_can_decrypt_real_sample_header() -> None:
+    qmc_module = import_qmc_module()
     tmp_path = make_workspace_tmp_path("decrypt_real_sample_header")
     encrypted_head_path = tmp_path / "sample_head.mflac"
     decrypted_head_path = tmp_path / "sample_head.flac"
@@ -69,7 +72,7 @@ def test_decrypt_mflac_file_can_decrypt_real_sample_header() -> None:
     with SAMPLE_MFLAC_PATH.open("rb") as source:
         encrypted_head_path.write_bytes(source.read(65536))
 
-    output_path = decrypt_mflac_file(
+    output_path = qmc_module.decrypt_mflac_file(
         encrypted_head_path,
         decrypted_head_path,
         KUWO_SAMPLE_EKEY,

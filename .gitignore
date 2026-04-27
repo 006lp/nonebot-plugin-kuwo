@@ -15,6 +15,7 @@ target/
 AGENTS.md
 ARCHITECTURE.md
 SPEC.md
+skills/
 
 # Test temp files
 tests/.tmp/

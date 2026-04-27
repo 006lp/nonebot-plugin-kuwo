@@ -1,11 +1,16 @@
+# ruff: noqa: E402
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 from html import escape
 from pathlib import Path
 
 from nonebot import logger, require
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot_plugin_alconna.uniseg import Image, UniMessage
+
+require("nonebot_plugin_htmlrender")
+
+from nonebot_plugin_htmlrender import html_to_pic
 
 from .config import ListRenderMode
 from .models import KuwoSearchSong
@@ -20,15 +25,6 @@ def _render_search_results_text(songs: Sequence[KuwoSearchSong]) -> str:
         format_search_result_line(index, song.song_id, song.name, song.artist)
         for index, song in enumerate(songs, start=1)
     )
-
-
-def _load_html_to_pic() -> Callable[..., Awaitable[bytes]]:
-    logger.debug("Loading nonebot_plugin_htmlrender entrypoint")
-    require("nonebot_plugin_htmlrender")
-    from nonebot_plugin_htmlrender import html_to_pic
-
-    logger.debug("nonebot_plugin_htmlrender loaded successfully")
-    return html_to_pic
 
 
 def _build_cover_block(song: KuwoSearchSong) -> str:
@@ -258,9 +254,8 @@ def _build_search_results_html(songs: Sequence[KuwoSearchSong]) -> str:
     return html
 
 
-async def _render_search_results_image(songs: Sequence[KuwoSearchSong]) -> Message:
+async def _render_search_results_image(songs: Sequence[KuwoSearchSong]) -> UniMessage:
     logger.info("Rendering kuwo search results in image mode: song_count={}", len(songs))
-    html_to_pic = _load_html_to_pic()
     html = _build_search_results_html(songs)
     logger.debug(
         "Calling html_to_pic for kuwo search results: template_path={}, viewport_width={}, wait_ms={}",
@@ -279,19 +274,13 @@ async def _render_search_results_image(songs: Sequence[KuwoSearchSong]) -> Messa
         "Rendered kuwo search result image successfully: byte_length={}",
         len(image_bytes),
     )
-    message = Message(MessageSegment.image(image_bytes))
-    logger.debug(
-        "Built search result image message: segment_count={}, first_segment_type={}",
-        len(message),
-        message[0].type if message else "unknown",
-    )
-    return message
+    return UniMessage([Image(raw=image_bytes)])
 
 
 async def render_search_results(
     songs: Sequence[KuwoSearchSong],
     mode: ListRenderMode,
-) -> str | Message:
+) -> str | UniMessage:
     logger.info(
         "Starting kuwo search result render: mode={}, song_count={}",
         mode.value,

@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from pathlib import Path
 
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot_plugin_alconna.builtins.uniseg.music_share import (
+    MusicShare,
+    MusicShareKind,
+)
+from nonebot_plugin_alconna.uniseg import File, Image, Text, UniMessage, Voice
 
 from .config import TrackRenderMode
 
@@ -46,7 +51,7 @@ def format_track_text(
     elif title:
         lines.append(title)
     else:
-        lines.append(f"歌曲ID：{rid}")
+        lines.append(f"歌曲 ID：{rid}")
 
     if album:
         lines.append(f"专辑：{album}")
@@ -85,29 +90,31 @@ def build_track_message(
     title: str | None = None,
     artist: str | None = None,
     album: str | None = None,
-) -> str | Message:
+) -> str | UniMessage:
     if render_mode is TrackRenderMode.FILE:
         if not local_file_path:
             raise ValueError("local_file_path is required for file mode")
-        return Message([MessageSegment("file", {"file": local_file_path})])
+        file_path = Path(local_file_path)
+        return UniMessage([File(path=file_path, name=file_path.name)])
 
     if render_mode is TrackRenderMode.RECORD:
-        return Message([MessageSegment.record(direct_url)])
+        return UniMessage([Voice(url=direct_url)])
 
     if render_mode is TrackRenderMode.CARD:
-        return Message(
+        return UniMessage(
             [
-                MessageSegment.music_custom(
+                MusicShare(
+                    kind=MusicShareKind.Custom,
                     url=direct_url,
                     audio=direct_url,
-                    title=title or f"歌曲ID {rid}",
+                    title=title or f"歌曲 ID {rid}",
                     content=format_track_card_content(
                         artist=artist,
                         album=album,
                         bitrate=bitrate,
                         duration=duration,
                     ),
-                    img_url=cover_url,
+                    thumbnail=cover_url,
                 )
             ]
         )
@@ -124,9 +131,4 @@ def build_track_message(
     )
     if not cover_url:
         return text
-    return Message(
-        [
-            MessageSegment.image(cover_url),
-            MessageSegment.text(f"\n{text}"),
-        ]
-    )
+    return UniMessage([Image(url=cover_url), Text(f"\n{text}")])
