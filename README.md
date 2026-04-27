@@ -59,12 +59,29 @@ nb plugin install nonebot-plugin-kuwo --upgrade -i https://pypi.org/simple
 uv add nonebot-plugin-kuwo
 ```
 
-安装后在 NoneBot 项目中启用插件：
+安装 GitHub 仓库主分支：
+
+```bash
+uv add git+https://github.com/006lp/nonebot-plugin-kuwo@main
+```
+
+如果你使用其他包管理器，也可以选择：
+
+```bash
+pdm add nonebot-plugin-kuwo
+```
+
+```bash
+poetry add nonebot-plugin-kuwo
+```
+
+安装后，在 NoneBot2 项目的 `pyproject.toml` 中加入：
 
 ```toml
-[tool.nonebot]
 plugins = ["nonebot_plugin_kuwo"]
 ```
+
+</details>
 
 ## 配置
 
