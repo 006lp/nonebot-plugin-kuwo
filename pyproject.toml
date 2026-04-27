@@ -25,11 +25,6 @@ dev = [
     "uvicorn>=0.35.0,<1.0.0",
 ]
 
-[tool.uv]
-override-dependencies = [
-    "greenlet==3.3.2; sys_platform == 'win32' and platform_machine == 'AMD64'",
-]
-
 [build-system]
 requires = ["maturin>=1.13.1,<2.0"]
 build-backend = "maturin"

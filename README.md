@@ -25,6 +25,7 @@
 - 消息输出统一使用 `uniseg`
 - 配置统一使用 `get_plugin_config(Config)`
 - 文件缓存统一使用 `nonebot-plugin-localstore`
+- `nonebot-plugin-htmlrender` 所需 `greenlet` 已作为正式跨平台依赖提供
 - `.mflac` 解密核心使用 `Rust + PyO3 + maturin`
 
 ## 功能
