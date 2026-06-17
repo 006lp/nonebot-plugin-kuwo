@@ -4,6 +4,7 @@ version = "0.2.4"
 description = "NoneBot2 plugin for Kuwo music search and track delivery."
 readme = "README.md"
 authors = [{ name = "006lp", email = "lpsuki@outlook.com" }]
+license = "AGPL-3.0-only"
 requires-python = ">=3.10"
 dependencies = [
     "httpx>=0.28.1,<1.0.0",

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.4 - 2026-06-18
+
+- 迁移直链接口域名，恢复海外访问
+- 移除全局 `X-Forwarded-For` 请求头，不再伪造客户端来源
+- 直链接口 `user` 参数改为每次请求随机生成 16 位小写字母/数字字符串
+- `file` 模式下载音频直链时使用 `User-Agent: Lavf/57.83.100`，避免 CDN 拒绝默认 HTTP 客户端请求头
+- `kwsearch` 图片渲染迁移到 `nonebot-plugin-htmlrender` 0.7.0 推荐的 `render_html` API，并补充 `RENDER_BACKEND=playwright` 配置说明
+- 定制 GitHub Issue 模板，按酷我插件命令、输出模式、依赖版本、配置和脱敏日志收集反馈信息
+
 ## 0.2.3 - 2026-04-28
 
 - 调整 GitHub Actions 触发条件，`CI` 响应分支 push / PR，但忽略 `v*` tag push，避免发布时同一提交触发重复 CI
