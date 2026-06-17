@@ -117,13 +117,13 @@ async def test_kwsearch_command_returns_image_results(
         assert limit == 5
         return [build_search_song(web_albumpic_short="120/s4s64/98/1370027605.jpg")]
 
-    async def fake_html_to_pic(**kwargs) -> bytes:
-        render_calls["html"] = kwargs["html"]
+    async def fake_render_html(html: str, **kwargs) -> bytes:
+        render_calls["html"] = html
         render_calls["template_path"] = kwargs["template_path"]
         return b"rendered-image"
 
     monkeypatch.setattr(plugin, "search_songs", fake_search)
-    monkeypatch.setattr(render_module, "html_to_pic", fake_html_to_pic)
+    monkeypatch.setattr(render_module, "render_html", fake_render_html)
     monkeypatch.setattr(plugin, "kwsearch", dummy_matcher)
     monkeypatch.setattr(
         plugin,

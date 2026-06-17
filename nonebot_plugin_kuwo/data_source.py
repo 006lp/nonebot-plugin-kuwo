@@ -36,6 +36,7 @@ TRACK_API_URL = "https://nmsublist.kuwo.cn/mobi.s"
 COVER_API_URL = "http://artistpicserver.kuwo.cn/pic.web"
 DETAIL_API_URL = "http://musicpay.kuwo.cn/music.pay"
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+TRACK_FILE_DOWNLOAD_HEADERS = {"User-Agent": "Lavf/57.83.100"}
 SUPPORTED_TRACK_FILE_FORMATS = {"mp3", "flac", "aac", "ogg", "wav"}
 TRACK_CACHE_TEMP_SUFFIX = ".part"
 SECONDS_PER_DAY = 24 * 60 * 60
@@ -420,7 +421,11 @@ async def _download_file_to_path(direct_url: str, file_path: Path) -> Path:
     _remove_path(temp_path)
     client = await get_http_client()
     try:
-        async with client.stream("GET", direct_url) as response:
+        async with client.stream(
+            "GET",
+            direct_url,
+            headers=TRACK_FILE_DOWNLOAD_HEADERS,
+        ) as response:
             response.raise_for_status()
             with temp_path.open("wb") as file:
                 async for chunk in response.aiter_bytes():

@@ -10,7 +10,7 @@ from nonebot_plugin_alconna.uniseg import Image, UniMessage
 
 require("nonebot_plugin_htmlrender")
 
-from nonebot_plugin_htmlrender import html_to_pic
+from nonebot_plugin_htmlrender import render_html
 
 from .config import ListRenderMode
 from .models import KuwoSearchSong
@@ -258,13 +258,13 @@ async def _render_search_results_image(songs: Sequence[KuwoSearchSong]) -> UniMe
     logger.info("Rendering kuwo search results in image mode: song_count={}", len(songs))
     html = _build_search_results_html(songs)
     logger.debug(
-        "Calling html_to_pic for kuwo search results: template_path={}, viewport_width={}, wait_ms={}",
+        "Calling render_html for kuwo search results: template_path={}, viewport_width={}, wait_ms={}",
         _HTML_RENDER_BASE_URI,
         1040,
         200,
     )
-    image_bytes = await html_to_pic(
-        html=html,
+    image_bytes = await render_html(
+        html,
         template_path=_HTML_RENDER_BASE_URI,
         viewport={"width": 1040, "height": 10},
         wait=200,

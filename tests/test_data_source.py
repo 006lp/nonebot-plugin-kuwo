@@ -218,6 +218,10 @@ async def test_download_track_file_success(monkeypatch: pytest.MonkeyPatch) -> N
     )
 
     assert route.called
+    assert (
+        route.calls.last.request.headers["user-agent"]
+        == data_source.TRACK_FILE_DOWNLOAD_HEADERS["User-Agent"]
+    )
     assert file_path == (tmp_path / "553152678_2000.flac").resolve()
     assert file_path.read_bytes() == b"flac-bytes"
 
