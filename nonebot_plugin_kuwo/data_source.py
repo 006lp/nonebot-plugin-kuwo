@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
+import string
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -30,13 +32,15 @@ from .models import (
 from .qmc import decrypt_mflac_file
 
 SEARCH_API_URL = "http://search.kuwo.cn/r.s"
-TRACK_API_URL = "https://nmobi.kuwo.cn/mobi.s"
+TRACK_API_URL = "https://nmsublist.kuwo.cn/mobi.s"
 COVER_API_URL = "http://artistpicserver.kuwo.cn/pic.web"
 DETAIL_API_URL = "http://musicpay.kuwo.cn/music.pay"
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 SUPPORTED_TRACK_FILE_FORMATS = {"mp3", "flac", "aac", "ogg", "wav"}
 TRACK_CACHE_TEMP_SUFFIX = ".part"
 SECONDS_PER_DAY = 24 * 60 * 60
+TRACK_USER_ALPHABET = string.ascii_lowercase + string.digits
+TRACK_USER_LENGTH = 16
 
 _client: httpx.AsyncClient | None = None
 _client_lock = asyncio.Lock()
@@ -99,10 +103,7 @@ async def get_http_client() -> httpx.AsyncClient:
     if _client is None:
         async with _client_lock:
             if _client is None:
-                _client = httpx.AsyncClient(
-                    timeout=DEFAULT_TIMEOUT,
-                    headers={"X-Forwarded-For": "49.7.250.26"},
-                )
+                _client = httpx.AsyncClient(timeout=DEFAULT_TIMEOUT)
     return _client
 
 
@@ -206,7 +207,7 @@ async def get_song_link(rid: str, br: str) -> KuwoTrackLinkData:
         "type": "convert_url_with_sign",
         "rid": rid,
         "br": br,
-        "user": 10082,
+        "user": generate_track_user(),
     }
     try:
         response = await client.get(TRACK_API_URL, params=params)
@@ -227,6 +228,12 @@ async def get_song_link(rid: str, br: str) -> KuwoTrackLinkData:
     if track_response.code != 200:
         raise KuwoTrackResponseError(f"track response code is {track_response.code}")
     return track_response.data
+
+
+def generate_track_user() -> str:
+    return "".join(
+        secrets.choice(TRACK_USER_ALPHABET) for _ in range(TRACK_USER_LENGTH)
+    )
 
 
 async def get_song_detail(rid: str) -> KuwoTrackDetail:

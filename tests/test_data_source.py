@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -97,6 +98,7 @@ async def test_search_songs_success() -> None:
     songs = await data_source.search_songs("Morning Dew Reflection", 5)
 
     assert route.called
+    assert "x-forwarded-for" not in route.calls.last.request.headers
     assert len(songs) == 1
     assert songs[0].song_id == "553152678"
     assert songs[0].artist == "rionos&Kangseoha&Kim Yoon"
@@ -122,7 +124,7 @@ async def test_search_songs_raises_on_invalid_payload() -> None:
 @respx.mock
 async def test_get_song_media_returns_direct_url_and_cover() -> None:
     data_source = import_data_source_module()
-    respx.get(data_source.TRACK_API_URL).mock(
+    track_route = respx.get(data_source.TRACK_API_URL).mock(
         return_value=httpx.Response(200, json=TRACK_RESPONSE)
     )
     respx.get(data_source.COVER_API_URL).mock(
@@ -131,6 +133,12 @@ async def test_get_song_media_returns_direct_url_and_cover() -> None:
 
     media = await data_source.get_song_media("11713652", "2000kflac")
 
+    assert data_source.TRACK_API_URL == "https://nmsublist.kuwo.cn/mobi.s"
+    assert track_route.called
+    request = track_route.calls.last.request
+    assert "x-forwarded-for" not in request.headers
+    assert request.url.params["user"]
+    assert re.fullmatch(r"[a-z0-9]{16}", request.url.params["user"])
     assert media.rid == "11713652"
     assert media.format == "flac"
     assert media.bitrate == 2000
@@ -176,6 +184,13 @@ def test_resolve_track_file_extension_prefers_url_suffix() -> None:
         )
         == "flac"
     )
+
+
+def test_generate_track_user_returns_lowercase_alphanumeric_string() -> None:
+    data_source = import_data_source_module()
+    value = data_source.generate_track_user()
+
+    assert re.fullmatch(r"[a-z0-9]{16}", value)
 
 
 @pytest.mark.asyncio
