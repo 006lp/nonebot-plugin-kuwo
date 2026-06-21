@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5 - 2026-06-21
+
+- 升级并验证 `nonebot-plugin-htmlrender>=0.7.1`，图片列表继续使用 `render_html`，未配置 `RENDER_BACKEND=playwright` 时保留文本回退
+- 升级并验证 `maturin>=1.14.1`，确认 `maturin develop --release` 可构建并安装 `cp310-abi3` Rust 扩展
+- 升级 Rust 扩展依赖 `pyo3` 到 `0.29.0`，并刷新 `Cargo.lock`
+
 ## 0.2.4 - 2026-06-18
 
 - 迁移直链接口域名，恢复海外访问

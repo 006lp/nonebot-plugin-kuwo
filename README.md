@@ -229,7 +229,6 @@ cargo fmt --all
 
 - 发布版 wheel 会自带原生扩展 `_qmc_rs`
 - 源码开发或本地调试需要先执行 `maturin develop`
-- 当前构建配置已按 `maturin>=1.14.1` 验证
 
 ## 项目结构
 
