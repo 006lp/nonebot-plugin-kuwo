@@ -109,7 +109,7 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 | `KUWO_TRACK_CACHE_RETENTION_DAYS` | `1` | 文件缓存保留天数，`0` 表示关闭按天清理 |
 | `KUWO_TRACK_CACHE_MAX_SIZE_MB` | `1024` | 文件缓存总大小上限，`0` 表示关闭按大小清理 |
 
-`RENDER_BACKEND` 是 `nonebot-plugin-htmlrender` 的配置项。使用 `KUWO_LIST_RENDER_MODE=image` 时需要设置为 `playwright`；未配置时图片渲染会失败并自动回退到文本列表。
+`RENDER_BACKEND` 是 `nonebot-plugin-htmlrender` 的配置项。使用 `KUWO_LIST_RENDER_MODE=image` 时需要设置为 `playwright`；未配置时图片渲染会失败并自动回退到文本列表。当前项目已按 `nonebot-plugin-htmlrender>=0.7.1` 验证：默认 `RENDER_STARTUP_MODE=off` 时不会在 NoneBot 启动阶段预热浏览器，首次图片渲染会按需启动，详情见 [nonebot-plugin-htmlrender 文档](https://github.com/kexue-z/nonebot-plugin-htmlrender)。
 
 音质枚举：
 
@@ -229,6 +229,7 @@ cargo fmt --all
 
 - 发布版 wheel 会自带原生扩展 `_qmc_rs`
 - 源码开发或本地调试需要先执行 `maturin develop`
+- 当前构建配置已按 `maturin>=1.14.1` 验证
 
 ## 项目结构
 
