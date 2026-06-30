@@ -20,7 +20,9 @@ _HTML_RENDER_BASE_URI = Path(__file__).resolve().as_uri()
 
 
 def _render_search_results_text(songs: Sequence[KuwoSearchSong]) -> str:
-    logger.debug("Rendering kuwo search results in text mode: song_count={}", len(songs))
+    logger.debug(
+        "Rendering kuwo search results in text mode: song_count={}", len(songs)
+    )
     return "\n".join(
         format_search_result_line(index, song.song_id, song.name, song.artist)
         for index, song in enumerate(songs, start=1)
@@ -250,12 +252,16 @@ def _build_search_results_html(songs: Sequence[KuwoSearchSong]) -> str:
       </body>
     </html>
     """
-    logger.debug("Built kuwo search result html successfully: html_length={}", len(html))
+    logger.debug(
+        "Built kuwo search result html successfully: html_length={}", len(html)
+    )
     return html
 
 
 async def _render_search_results_image(songs: Sequence[KuwoSearchSong]) -> UniMessage:
-    logger.info("Rendering kuwo search results in image mode: song_count={}", len(songs))
+    logger.info(
+        "Rendering kuwo search results in image mode: song_count={}", len(songs)
+    )
     html = _build_search_results_html(songs)
     logger.debug(
         "Calling render_html for kuwo search results: template_path={}, viewport_width={}, wait_ms={}",

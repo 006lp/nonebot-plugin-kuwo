@@ -33,9 +33,9 @@ def test_join_keyword_parts() -> None:
 
 def test_strip_url_query() -> None:
     utils_module = import_utils_module()
-    assert utils_module.strip_url_query("http://example.com/song.flac?bitrate$2000") == (
-        "http://example.com/song.flac"
-    )
+    assert utils_module.strip_url_query(
+        "http://example.com/song.flac?bitrate$2000"
+    ) == ("http://example.com/song.flac")
 
 
 def test_format_track_file_name_uses_quality_metadata_and_real_suffix() -> None:
@@ -46,11 +46,14 @@ def test_format_track_file_name_uses_quality_metadata_and_real_suffix() -> None:
         quality=config_module.KuwoQuality.LOSSLESS,
         file_path=Path("C:/tmp/553152678_2000.flac"),
         rid="553152678",
-        title='Summer/Pockets: Reflection?.mflac',
-        artist='VISUAL ARTS&Key Sounds Label|rionos',
+        title="Summer/Pockets: Reflection?.mflac",
+        artist="VISUAL ARTS&Key Sounds Label|rionos",
     )
 
-    assert file_name == "[lossless]Summer Pockets Reflection - VISUAL ARTS&Key Sounds Label rionos.flac"
+    assert (
+        file_name
+        == "[lossless]Summer Pockets Reflection - VISUAL ARTS&Key Sounds Label rionos.flac"
+    )
 
 
 def test_format_track_text() -> None:

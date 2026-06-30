@@ -9,7 +9,9 @@ def import_config_module():
     return importlib.import_module("nonebot_plugin_kuwo.config")
 
 
-def test_get_runtime_config_returns_plugin_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_runtime_config_returns_plugin_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config_module = import_config_module()
     expected = config_module.Config(
         kuwo_search_limit=7,
@@ -30,6 +32,7 @@ def test_get_runtime_config_returns_plugin_config(monkeypatch: pytest.MonkeyPatc
     assert config.kuwo_default_quality is config_module.KuwoQuality.LOSSLESS
     assert config.kuwo_track_cache_retention_days == 2
     assert config.kuwo_track_cache_max_size_mb == 1536
+    assert config.kuwo_track_proxy_url is None
     assert config_module.get_quality_bitrate(config.kuwo_default_quality) == "2000kflac"
 
 
@@ -85,6 +88,29 @@ def test_resolve_track_quality_raises_on_invalid_quality() -> None:
             config_module.KuwoQuality.STANDARD,
             "not-a-quality",
         )
+
+
+def test_config_accepts_http_track_proxy_with_auth() -> None:
+    config_module = import_config_module()
+    config = config_module.Config(
+        kuwo_track_proxy_url="  http://user:pass@127.0.0.1:7890  ",
+    )
+
+    assert config.kuwo_track_proxy_url == "http://user:pass@127.0.0.1:7890"
+
+
+def test_config_rejects_non_http_track_proxy() -> None:
+    config_module = import_config_module()
+
+    with pytest.raises(ValueError, match="HTTP/HTTPS proxy URL"):
+        config_module.Config(kuwo_track_proxy_url="socks5://127.0.0.1:7890")
+
+
+def test_config_treats_blank_track_proxy_as_disabled() -> None:
+    config_module = import_config_module()
+    config = config_module.Config(kuwo_track_proxy_url="   ")
+
+    assert config.kuwo_track_proxy_url is None
 
 
 def test_get_runtime_config_warns_when_track_cache_max_size_below_recommended(

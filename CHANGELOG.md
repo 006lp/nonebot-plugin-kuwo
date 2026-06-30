@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.6 - 2026-07-01
+
+- `file` 模式上传文件名改为 `[quality]歌曲名 - 歌手.扩展名`，并保留 Alconna `uniseg` 跨适配器发送路径
+- 新增 `KUWO_TRACK_PROXY_URL`，支持仅对歌曲直链接口使用 HTTP/HTTPS 代理并脱敏记录代理认证信息
+
 ## 0.2.5 - 2026-06-21
 
 - 升级并验证 `nonebot-plugin-htmlrender>=0.7.1`，图片列表继续使用 `render_html`，未配置 `RENDER_BACKEND=playwright` 时保留文本回退

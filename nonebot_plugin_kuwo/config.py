@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any
+from urllib.parse import urlparse
 
 from nonebot import get_plugin_config, logger
 from nonebot.compat import field_validator, model_validator
@@ -56,6 +57,7 @@ class Config(BaseModel):
     kuwo_default_quality: KuwoQuality = KuwoQuality.STANDARD
     kuwo_track_cache_retention_days: int = Field(default=1, ge=0)
     kuwo_track_cache_max_size_mb: int = Field(default=1024, ge=0)
+    kuwo_track_proxy_url: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -90,6 +92,23 @@ class Config(BaseModel):
     @classmethod
     def normalize_default_quality(cls, value: KuwoQuality | str) -> KuwoQuality | str:
         return _normalize_enum_input(value)
+
+    @field_validator("kuwo_track_proxy_url", mode="before")
+    @classmethod
+    def normalize_track_proxy_url(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+
+        proxy_url = value.strip()
+        if not proxy_url:
+            return None
+
+        parsed = urlparse(proxy_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("KUWO_TRACK_PROXY_URL must be an HTTP/HTTPS proxy URL")
+        return proxy_url
 
 
 def get_runtime_config() -> Config:

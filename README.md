@@ -94,6 +94,7 @@ KUWO_SEARCH_LIMIT=5
 KUWO_LIST_RENDER_MODE=text
 KUWO_TRACK_RENDER_MODE=text
 KUWO_DEFAULT_QUALITY=standard
+# KUWO_TRACK_PROXY_URL=http://127.0.0.1:7890
 KUWO_TRACK_CACHE_RETENTION_DAYS=1
 KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 ```
@@ -106,6 +107,7 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 | `KUWO_LIST_RENDER_MODE` | `text` | 搜索列表模式，支持 `text` / `image` |
 | `KUWO_TRACK_RENDER_MODE` | `text` | 单曲输出模式，支持 `text` / `card` / `record` / `file` |
 | `KUWO_DEFAULT_QUALITY` | `standard` | 默认音质 |
+| `KUWO_TRACK_PROXY_URL` | 未配置 | 由于版权相关问题，海外用户请求歌曲直链时需要使用境内 HTTP/HTTPS 代理，例如 `http://user:pass@127.0.0.1:7890` |
 | `KUWO_TRACK_CACHE_RETENTION_DAYS` | `1` | 文件缓存保留天数，`0` 表示关闭按天清理 |
 | `KUWO_TRACK_CACHE_MAX_SIZE_MB` | `1024` | 文件缓存总大小上限，`0` 表示关闭按大小清理 |
 
@@ -127,6 +129,7 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 - `record` 模式强制回落到 `standard`
 - `card` 模式音质上限固定为 `lossless`
 - `KUWO_TRACK_CACHE_MAX_SIZE_MB` 小于 `600` 时仅记录警告，不阻止启动
+- `KUWO_TRACK_PROXY_URL` 只代理歌曲直链接口，不代理搜索、封面、详情和文件下载
 
 ## 使用
 

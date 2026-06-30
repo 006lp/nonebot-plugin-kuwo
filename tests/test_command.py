@@ -32,9 +32,7 @@ def import_uniseg_module():
 
 
 def import_music_share_module():
-    return importlib.import_module(
-        "nonebot_plugin_alconna.builtins.uniseg.music_share"
-    )
+    return importlib.import_module("nonebot_plugin_alconna.builtins.uniseg.music_share")
 
 
 class MatcherFinished(Exception):

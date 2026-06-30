@@ -150,6 +150,62 @@ async def test_get_song_media_returns_direct_url_and_cover() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_song_link_uses_configured_proxy_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_source = import_data_source_module()
+    config_module = import_config_module()
+    proxy_url = "http://user:pass@127.0.0.1:7890"
+    captured_proxy_urls: list[str | None] = []
+    captured_requests: list[tuple[str, dict[str, str]]] = []
+
+    class FakeClient:
+        async def get(self, url: str, params: dict[str, str]) -> httpx.Response:
+            captured_requests.append((url, params))
+            request = httpx.Request("GET", url, params=params)
+            return httpx.Response(200, json=TRACK_RESPONSE, request=request)
+
+    async def fake_get_track_link_http_client(
+        configured_proxy_url: str | None,
+    ) -> FakeClient:
+        captured_proxy_urls.append(configured_proxy_url)
+        return FakeClient()
+
+    monkeypatch.setattr(
+        data_source,
+        "get_runtime_config",
+        lambda: config_module.Config(kuwo_track_proxy_url=proxy_url),
+    )
+    monkeypatch.setattr(
+        data_source,
+        "get_track_link_http_client",
+        fake_get_track_link_http_client,
+    )
+
+    track = await data_source.get_song_link("11713652", "2000kflac")
+
+    assert captured_proxy_urls == [proxy_url]
+    assert len(captured_requests) == 1
+    assert captured_requests[0][0] == data_source.TRACK_API_URL
+    assert captured_requests[0][1]["rid"] == "11713652"
+    assert captured_requests[0][1]["br"] == "2000kflac"
+    assert track.direct_url == "http://example.com/song.flac"
+
+
+def test_redact_proxy_url_hides_credentials() -> None:
+    data_source = import_data_source_module()
+
+    assert (
+        data_source.redact_proxy_url("http://user:pass@127.0.0.1:7890")
+        == "http://***@127.0.0.1:7890"
+    )
+    assert (
+        data_source.redact_proxy_url("https://127.0.0.1:7890")
+        == "https://127.0.0.1:7890"
+    )
+
+
+@pytest.mark.asyncio
 @respx.mock
 async def test_get_song_detailed_media_returns_track_detail() -> None:
     data_source = import_data_source_module()
@@ -241,7 +297,9 @@ async def test_download_track_file_decrypts_mflac_to_flac(
         "get_runtime_config",
         lambda: make_runtime_config(),
     )
-    monkeypatch.setattr(data_source, "_remove_path", lambda path: removed_paths.append(path))
+    monkeypatch.setattr(
+        data_source, "_remove_path", lambda path: removed_paths.append(path)
+    )
     monkeypatch.setattr(data_source, "_replace_path", fake_replace_path)
 
     async def fake_download_file_to_path(direct_url: str, file_path: Path) -> Path:
@@ -262,7 +320,9 @@ async def test_download_track_file_decrypts_mflac_to_flac(
         target_path.write_bytes(b"fLaCdecoded")
         return target_path
 
-    monkeypatch.setattr(data_source, "_download_file_to_path", fake_download_file_to_path)
+    monkeypatch.setattr(
+        data_source, "_download_file_to_path", fake_download_file_to_path
+    )
     monkeypatch.setattr(data_source, "decrypt_mflac_file", fake_decrypt_mflac_file)
 
     file_path = await data_source.download_track_file(
@@ -305,7 +365,9 @@ async def test_download_track_file_deletes_expired_cache_entries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     data_source = import_data_source_module()
-    tmp_path = make_workspace_tmp_path("download_track_file_deletes_expired_cache_entries")
+    tmp_path = make_workspace_tmp_path(
+        "download_track_file_deletes_expired_cache_entries"
+    )
     deleted_paths: list[Path] = []
     expired_path = (tmp_path / "old_2000.flac").resolve()
     expired_path.write_bytes(b"expired")
@@ -328,7 +390,9 @@ async def test_download_track_file_deletes_expired_cache_entries(
         file_path.write_bytes(b"fresh")
         return file_path
 
-    monkeypatch.setattr(data_source, "_download_file_to_path", fake_download_file_to_path)
+    monkeypatch.setattr(
+        data_source, "_download_file_to_path", fake_download_file_to_path
+    )
 
     file_path = await data_source.download_track_file(
         "553152678",
@@ -375,7 +439,9 @@ async def test_download_track_file_prunes_cache_by_size_after_download(
         file_path.write_bytes(b"c" * (300 * 1024))
         return file_path
 
-    monkeypatch.setattr(data_source, "_download_file_to_path", fake_download_file_to_path)
+    monkeypatch.setattr(
+        data_source, "_download_file_to_path", fake_download_file_to_path
+    )
 
     file_path = await data_source.download_track_file(
         "553152678",
@@ -394,7 +460,9 @@ async def test_download_track_file_skips_cache_cleanup_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     data_source = import_data_source_module()
-    tmp_path = make_workspace_tmp_path("download_track_file_skips_cache_cleanup_when_disabled")
+    tmp_path = make_workspace_tmp_path(
+        "download_track_file_skips_cache_cleanup_when_disabled"
+    )
     deleted_paths: list[Path] = []
     old_path = (tmp_path / "old_2000.flac").resolve()
     old_path.write_bytes(b"a" * (700 * 1024))
@@ -417,7 +485,9 @@ async def test_download_track_file_skips_cache_cleanup_when_disabled(
         file_path.write_bytes(b"fresh")
         return file_path
 
-    monkeypatch.setattr(data_source, "_download_file_to_path", fake_download_file_to_path)
+    monkeypatch.setattr(
+        data_source, "_download_file_to_path", fake_download_file_to_path
+    )
 
     file_path = await data_source.download_track_file(
         "553152678",

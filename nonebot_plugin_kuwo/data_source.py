@@ -44,7 +44,10 @@ TRACK_USER_ALPHABET = string.ascii_lowercase + string.digits
 TRACK_USER_LENGTH = 16
 
 _client: httpx.AsyncClient | None = None
+_track_proxy_client: httpx.AsyncClient | None = None
+_track_proxy_client_url: str | None = None
 _client_lock = asyncio.Lock()
+_track_proxy_client_lock = asyncio.Lock()
 _track_file_operation_lock = asyncio.Lock()
 _track_file_cache_dir: Path | None = None
 
@@ -108,15 +111,59 @@ async def get_http_client() -> httpx.AsyncClient:
     return _client
 
 
+def redact_proxy_url(proxy_url: str) -> str:
+    parsed = urlparse(proxy_url)
+    if not parsed.username and not parsed.password:
+        return proxy_url
+
+    host = parsed.netloc.rsplit("@", maxsplit=1)[-1]
+    return proxy_url.replace(parsed.netloc, f"***@{host}", 1)
+
+
+async def get_track_proxy_http_client(proxy_url: str) -> httpx.AsyncClient:
+    global _track_proxy_client, _track_proxy_client_url
+    if _track_proxy_client is None or _track_proxy_client_url != proxy_url:
+        async with _track_proxy_client_lock:
+            if _track_proxy_client is not None and _track_proxy_client_url != proxy_url:
+                await _track_proxy_client.aclose()
+                _track_proxy_client = None
+                _track_proxy_client_url = None
+
+            if _track_proxy_client is None:
+                _track_proxy_client = httpx.AsyncClient(
+                    timeout=DEFAULT_TIMEOUT,
+                    proxy=proxy_url,
+                )
+                _track_proxy_client_url = proxy_url
+                logger.info(
+                    "Initialized kuwo track proxy http client: proxy={}",
+                    redact_proxy_url(proxy_url),
+                )
+    return _track_proxy_client
+
+
+async def get_track_link_http_client(proxy_url: str | None) -> httpx.AsyncClient:
+    if proxy_url:
+        return await get_track_proxy_http_client(proxy_url)
+    return await get_http_client()
+
+
 async def initialize_http_client() -> None:
     await get_http_client()
+    proxy_url = get_runtime_config().kuwo_track_proxy_url
+    if proxy_url:
+        await get_track_proxy_http_client(proxy_url)
 
 
 async def close_http_client() -> None:
-    global _client
+    global _client, _track_proxy_client, _track_proxy_client_url
     if _client is not None:
         await _client.aclose()
         _client = None
+    if _track_proxy_client is not None:
+        await _track_proxy_client.aclose()
+        _track_proxy_client = None
+        _track_proxy_client_url = None
 
 
 async def search_songs(keyword: str, limit: int) -> list[KuwoSearchSong]:
@@ -201,7 +248,8 @@ async def get_song_detailed_media(rid: str, br: str) -> KuwoDetailedTrackResourc
 
 
 async def get_song_link(rid: str, br: str) -> KuwoTrackLinkData:
-    client = await get_http_client()
+    proxy_url = get_runtime_config().kuwo_track_proxy_url
+    client = await get_track_link_http_client(proxy_url)
     params = {
         "f": "web",
         "source": "kwplayer_ar_8.5.5.0_keluze.apk",
@@ -210,6 +258,13 @@ async def get_song_link(rid: str, br: str) -> KuwoTrackLinkData:
         "br": br,
         "user": generate_track_user(),
     }
+    logger.debug(
+        "Requesting kuwo track api: rid={}, br={}, url={}, proxy={}",
+        rid,
+        br,
+        TRACK_API_URL,
+        redact_proxy_url(proxy_url) if proxy_url else "<disabled>",
+    )
     try:
         response = await client.get(TRACK_API_URL, params=params)
         response.raise_for_status()
@@ -345,9 +400,7 @@ def _cleanup_track_file_cache(
     kept_size = 0
     candidates: list[tuple[Path, int, float]] = []
     expire_before = (
-        time.time() - (retention_days * SECONDS_PER_DAY)
-        if retention_days > 0
-        else None
+        time.time() - (retention_days * SECONDS_PER_DAY) if retention_days > 0 else None
     )
 
     for file_path in track_file_cache_dir.iterdir():

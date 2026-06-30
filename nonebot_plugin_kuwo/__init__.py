@@ -9,10 +9,10 @@ from nonebot.plugin import PluginMetadata, inherit_supported_adapters
 
 require("nonebot_plugin_alconna")
 
-from nonebot_plugin_alconna import on_alconna  
-from nonebot_plugin_alconna.uniseg import UniMessage  
+from nonebot_plugin_alconna import on_alconna
+from nonebot_plugin_alconna.uniseg import UniMessage
 
-from .config import (  
+from .config import (
     Config,
     KuwoQuality,
     TrackRenderMode,
@@ -20,7 +20,7 @@ from .config import (
     get_runtime_config,
     resolve_track_quality,
 )
-from .data_source import (  
+from .data_source import (
     KuwoSearchNetworkError,
     KuwoSearchResponseError,
     KuwoTrackError,
@@ -32,9 +32,9 @@ from .data_source import (
     initialize_http_client,
     search_songs,
 )
-from .models import KuwoDetailedTrackResource, KuwoSearchSong, KuwoTrackResource  
-from .render import render_search_results  
-from .utils import build_track_message, join_keyword_parts, normalize_musicrid  
+from .models import KuwoDetailedTrackResource, KuwoSearchSong, KuwoTrackResource
+from .render import render_search_results
+from .utils import build_track_message, join_keyword_parts, normalize_musicrid
 
 __plugin_meta__ = PluginMetadata(
     name="酷我音乐",
@@ -234,7 +234,9 @@ async def handle_kwsearch(arp: Arparma) -> None:
     try:
         songs = await _search_song_candidates(keyword, config.kuwo_search_limit)
     except KuwoSearchNetworkError as exc:
-        logger.opt(exception=exc).warning("Kuwo search request failed: keyword={}", keyword)
+        logger.opt(exception=exc).warning(
+            "Kuwo search request failed: keyword={}", keyword
+        )
         await kwsearch.finish("搜索服务暂时不可用，请稍后再试")
     except KuwoSearchResponseError as exc:
         logger.opt(exception=exc).warning(
@@ -243,7 +245,9 @@ async def handle_kwsearch(arp: Arparma) -> None:
         )
         await kwsearch.finish("搜索结果解析失败")
 
-    logger.info("kwsearch search completed: keyword={}, song_count={}", keyword, len(songs))
+    logger.info(
+        "kwsearch search completed: keyword={}, song_count={}", keyword, len(songs)
+    )
     if not songs:
         await kwsearch.finish("未找到相关歌曲")
 
@@ -267,7 +271,9 @@ async def handle_kw(arp: Arparma) -> None:
     try:
         songs = await _search_song_candidates(keyword, 1)
     except KuwoSearchNetworkError as exc:
-        logger.opt(exception=exc).warning("Kuwo search request failed: keyword={}", keyword)
+        logger.opt(exception=exc).warning(
+            "Kuwo search request failed: keyword={}", keyword
+        )
         await kw.finish("搜索服务暂时不可用，请稍后再试")
     except KuwoSearchResponseError as exc:
         logger.opt(exception=exc).warning(
