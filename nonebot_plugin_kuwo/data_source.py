@@ -32,7 +32,7 @@ from .models import (
 from .qmc import decrypt_mflac_file
 
 SEARCH_API_URL = "http://search.kuwo.cn/r.s"
-TRACK_API_URL = "https://nmsublist.kuwo.cn/mobi.s"
+TRACK_API_URL = "https://changenotice.kuwo.cn/mobi.s"
 COVER_API_URL = "http://artistpicserver.kuwo.cn/pic.web"
 DETAIL_API_URL = "http://musicpay.kuwo.cn/music.pay"
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)

@@ -1,6 +1,6 @@
 [package]
 name = "nonebot-plugin-kuwo-rust"
-version = "0.2.6"
+version = "0.2.7-beta.0"
 edition = "2021"
 publish = false
 

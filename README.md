@@ -59,6 +59,12 @@ nb plugin install nonebot-plugin-kuwo --upgrade -i https://pypi.org/simple
 uv add nonebot-plugin-kuwo
 ```
 
+安装预发布测试版：
+
+```bash
+uv add nonebot-plugin-kuwo==0.2.7b0
+```
+
 安装 GitHub 仓库主分支：
 
 ```bash

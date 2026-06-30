@@ -133,7 +133,7 @@ async def test_get_song_media_returns_direct_url_and_cover() -> None:
 
     media = await data_source.get_song_media("11713652", "2000kflac")
 
-    assert data_source.TRACK_API_URL == "https://nmsublist.kuwo.cn/mobi.s"
+    assert data_source.TRACK_API_URL == "https://changenotice.kuwo.cn/mobi.s"
     assert track_route.called
     request = track_route.calls.last.request
     assert "x-forwarded-for" not in request.headers
