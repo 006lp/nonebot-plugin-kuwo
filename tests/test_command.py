@@ -162,6 +162,14 @@ def test_kw_command_parses_quality_option_after_spaced_keyword() -> None:
     }
 
 
+def test_kuwo_commands_block_following_matchers() -> None:
+    plugin = import_plugin_module()
+
+    assert plugin.kwsearch.block is True
+    assert plugin.kw.block is True
+    assert plugin.kwid.block is True
+
+
 @pytest.mark.asyncio
 async def test_kw_command_returns_cover_and_text(
     monkeypatch: pytest.MonkeyPatch,
@@ -409,7 +417,12 @@ async def test_kw_command_returns_file_segment(
         await plugin.handle_kw(arp)
 
     assert dummy_matcher.message == uniseg.UniMessage(
-        [uniseg.File(path=expected_path, name=expected_path.name)]
+        [
+            uniseg.File(
+                path=expected_path,
+                name="[lossless]Morning Dew Reflection - rionos&Kangseoha&Kim Yoon.flac",
+            )
+        ]
     )
 
 
@@ -477,7 +490,12 @@ async def test_kw_command_returns_file_segment_for_mflac_after_decrypt(
         await plugin.handle_kw(arp)
 
     assert dummy_matcher.message == uniseg.UniMessage(
-        [uniseg.File(path=expected_path, name=expected_path.name)]
+        [
+            uniseg.File(
+                path=expected_path,
+                name="[hifi]Morning Dew Reflection - rionos&Kangseoha&Kim Yoon.flac",
+            )
+        ]
     )
 
 
@@ -719,5 +737,13 @@ async def test_kwid_command_returns_file_segment(
         await plugin.handle_kwid(arp)
 
     assert dummy_matcher.message == uniseg.UniMessage(
-        [uniseg.File(path=expected_path, name=expected_path.name)]
+        [
+            uniseg.File(
+                path=expected_path,
+                name=(
+                    "[lossless]Pocket wo Fukurasete ~Sea, you again~ - "
+                    "VISUAL ARTS&Key Sounds Label&rionos.flac"
+                ),
+            )
+        ]
     )

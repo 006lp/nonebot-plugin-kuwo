@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 import pytest
 
 
 def import_utils_module():
     return importlib.import_module("nonebot_plugin_kuwo.utils")
+
+
+def import_config_module():
+    return importlib.import_module("nonebot_plugin_kuwo.config")
 
 
 def test_normalize_musicrid() -> None:
@@ -31,6 +36,21 @@ def test_strip_url_query() -> None:
     assert utils_module.strip_url_query("http://example.com/song.flac?bitrate$2000") == (
         "http://example.com/song.flac"
     )
+
+
+def test_format_track_file_name_uses_quality_metadata_and_real_suffix() -> None:
+    utils_module = import_utils_module()
+    config_module = import_config_module()
+
+    file_name = utils_module.format_track_file_name(
+        quality=config_module.KuwoQuality.LOSSLESS,
+        file_path=Path("C:/tmp/553152678_2000.flac"),
+        rid="553152678",
+        title='Summer/Pockets: Reflection?.mflac',
+        artist='VISUAL ARTS&Key Sounds Label|rionos',
+    )
+
+    assert file_name == "[lossless]Summer Pockets Reflection - VISUAL ARTS&Key Sounds Label rionos.flac"
 
 
 def test_format_track_text() -> None:

@@ -10,9 +10,11 @@ from nonebot_plugin_alconna.builtins.uniseg.music_share import (
 )
 from nonebot_plugin_alconna.uniseg import File, Image, Text, UniMessage, Voice
 
-from .config import TrackRenderMode
+from .config import KuwoQuality, TrackRenderMode
 
 _MUSICRID_RE = re.compile(r"(?:MUSIC_)?(?P<song_id>\d+)$")
+_AUDIO_SUFFIX_RE = re.compile(r"\.(?:aac|flac|mflac|mgg|mp3|ogg|wav)$", re.IGNORECASE)
+_INVALID_FILENAME_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 def normalize_musicrid(value: str) -> str:
@@ -32,6 +34,33 @@ def format_search_result_line(index: int, song_id: str, name: str, artist: str) 
 
 def strip_url_query(url: str) -> str:
     return url.split("?", maxsplit=1)[0]
+
+
+def _strip_audio_suffix(value: str) -> str:
+    return _AUDIO_SUFFIX_RE.sub("", value.strip())
+
+
+def _sanitize_filename_part(value: str, fallback: str) -> str:
+    sanitized = _INVALID_FILENAME_CHARS_RE.sub(" ", value)
+    sanitized = re.sub(r"\s+", " ", sanitized).strip(" .")
+    return sanitized or fallback
+
+
+def format_track_file_name(
+    *,
+    quality: KuwoQuality,
+    file_path: Path,
+    rid: str,
+    title: str | None = None,
+    artist: str | None = None,
+) -> str:
+    title_part = _sanitize_filename_part(
+        _strip_audio_suffix(title or ""),
+        f"歌曲 ID {rid}",
+    )
+    artist_part = _sanitize_filename_part(artist or "", "")
+    track_name = f"{title_part} - {artist_part}" if artist_part else title_part
+    return f"[{quality.value}]{track_name}{file_path.suffix}"
 
 
 def format_track_text(
@@ -81,6 +110,7 @@ def build_track_message(
     *,
     render_mode: TrackRenderMode,
     rid: str,
+    quality: KuwoQuality,
     bitrate: int,
     duration: int,
     direct_url: str,
@@ -95,7 +125,14 @@ def build_track_message(
         if not local_file_path:
             raise ValueError("local_file_path is required for file mode")
         file_path = Path(local_file_path)
-        return UniMessage([File(path=file_path, name=file_path.name)])
+        file_name = format_track_file_name(
+            quality=quality,
+            file_path=file_path,
+            rid=rid,
+            title=title,
+            artist=artist,
+        )
+        return UniMessage([File(path=file_path, name=file_name)])
 
     if render_mode is TrackRenderMode.RECORD:
         return UniMessage([Voice(url=direct_url)])

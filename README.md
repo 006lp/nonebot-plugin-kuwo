@@ -158,6 +158,7 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 - `file`
   - 下载到本地缓存后发送文件段
   - `.mflac` 会先解密成可播放的 `.flac`
+  - 上传文件名使用 `[quality]歌曲名 - 歌手.扩展名`，`quality` 为最终生效音质，例如 `[lossless]Summer - rionos.flac`
 
 ### 音质参数
 
