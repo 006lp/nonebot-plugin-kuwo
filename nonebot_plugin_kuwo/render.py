@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import unicodedata
 from collections.abc import Sequence
 from html import escape
 from pathlib import Path
@@ -34,9 +35,11 @@ INDEX_COLUMN_WIDTH = 56
 BODY_GAP = 18
 DURATION_BADGE_WIDTH = 76
 COUNT_BADGE_WIDTH = 132
+TEXT_BLOCK_GAP = 12
 
 IMAGE_SCALE = 2.0
 COVER_FETCH_TIMEOUT = 8.0
+MAX_COVER_BYTES = 5 * 1024 * 1024
 
 TITLE_MAX_UNITS = 44
 ARTIST_MAX_UNITS = 56
@@ -105,26 +108,34 @@ def resolve_font_sources(config: Config) -> tuple[list[str], list[str]]:
 
 
 def _character_width(character: str) -> int:
-    code_point = ord(character)
-    if 0x1100 <= code_point <= 0x115F or code_point >= 0x2E80:
-        return 2
-    return 1
+    if unicodedata.combining(character):
+        return 0
+    return 2 if unicodedata.east_asian_width(character) in {"W", "F"} else 1
 
 
-def _truncate(value: str, max_units: int) -> str:
-    text = value.strip()
+def _truncate(value: str | None, max_units: int, fallback: str = "") -> str:
+    text = (value or fallback).strip()
     if not text:
         return ""
 
+    if sum(_character_width(character) for character in text) <= max_units:
+        return text
+
+    budget = max(max_units - _character_width("…"), 0)
     consumed = 0
     kept: list[str] = []
     for character in text:
         width = _character_width(character)
-        if consumed + width > max_units:
-            return "".join(kept).rstrip() + "…"
+        if consumed + width > budget:
+            break
         kept.append(character)
         consumed += width
-    return text
+    return "".join(kept).rstrip() + "…"
+
+
+def _format_duration(seconds: int) -> str:
+    minutes, remainder = divmod(max(0, seconds), 60)
+    return f"{minutes}:{remainder:02d}"
 
 
 def _sniff_image_mime(data: bytes) -> str | None:
@@ -148,8 +159,41 @@ async def _fetch_cover_data_uri(song: KuwoSearchSong) -> str | None:
 
     client = await get_http_client()
     try:
-        response = await client.get(cover_url, timeout=COVER_FETCH_TIMEOUT)
-        response.raise_for_status()
+        async with client.stream(
+            "GET",
+            cover_url,
+            timeout=COVER_FETCH_TIMEOUT,
+        ) as response:
+            response.raise_for_status()
+
+            content_type = (
+                response.headers.get("content-type", "")
+                .split(";", 1)[0]
+                .strip()
+                .lower()
+            )
+            if content_type and not content_type.startswith("image/"):
+                logger.warning(
+                    "Search result cover is not an image: song_id={}, "
+                    "cover_url={}, content_type={}",
+                    song.song_id,
+                    cover_url,
+                    content_type,
+                )
+                return None
+
+            payload = bytearray()
+            async for chunk in response.aiter_bytes():
+                payload.extend(chunk)
+                if len(payload) > MAX_COVER_BYTES:
+                    logger.warning(
+                        "Search result cover exceeds {} bytes, using placeholder: "
+                        "song_id={}, cover_url={}",
+                        MAX_COVER_BYTES,
+                        song.song_id,
+                        cover_url,
+                    )
+                    return None
     except httpx.HTTPError as exc:
         logger.warning(
             "Failed to download search result cover: song_id={}, cover_url={}, error={}",
@@ -159,15 +203,15 @@ async def _fetch_cover_data_uri(song: KuwoSearchSong) -> str | None:
         )
         return None
 
-    data = response.content
+    data = bytes(payload)
     mime = _sniff_image_mime(data)
     if mime is None:
         logger.warning(
-            "Search result cover is not a supported image: song_id={}, "
+            "Search result cover payload is not a supported image: song_id={}, "
             "cover_url={}, content_type={}",
             song.song_id,
             cover_url,
-            response.headers.get("content-type", "<unknown>"),
+            content_type or "<missing>",
         )
         return None
 
@@ -181,6 +225,28 @@ async def _fetch_cover_data_uri(song: KuwoSearchSong) -> str | None:
     return f"data:{mime};base64,{encoded}"
 
 
+def _build_cover_placeholder(x: float, y: float) -> str:
+    center_x = x + COVER_SIZE / 2
+    center_y = y + COVER_SIZE / 2
+    return "".join(
+        [
+            (
+                f'<rect x="{x}" y="{y}" width="{COVER_SIZE}" height="{COVER_SIZE}" '
+                f'rx="{COVER_RADIUS}" fill="{COLOR_PLACEHOLDER}"/>'
+            ),
+            (
+                f'<circle cx="{center_x}" cy="{center_y}" '
+                f'r="{COVER_SIZE * 0.3}" fill="none" '
+                f'stroke="{COLOR_ACCENT_DARK}" stroke-width="3" opacity="0.45"/>'
+            ),
+            (
+                f'<circle cx="{center_x}" cy="{center_y}" '
+                f'r="{COVER_SIZE * 0.08}" fill="{COLOR_ACCENT_DARK}" opacity="0.45"/>'
+            ),
+        ]
+    )
+
+
 def _build_cover_block(
     *,
     index: int,
@@ -189,30 +255,21 @@ def _build_cover_block(
     data_uri: str | None,
 ) -> str:
     clip_id = f"cover-clip-{index}"
-    parts = [
-        f'<clipPath id="{clip_id}">',
+    clip = (
+        f'<clipPath id="{clip_id}">'
         f'<rect x="{x}" y="{y}" width="{COVER_SIZE}" height="{COVER_SIZE}" '
-        f'rx="{COVER_RADIUS}"/>',
-        "</clipPath>",
-    ]
+        f'rx="{COVER_RADIUS}"/>'
+        f"</clipPath>"
+    )
     if data_uri:
-        parts.append(
+        body = (
             f'<image x="{x}" y="{y}" width="{COVER_SIZE}" height="{COVER_SIZE}" '
             f'preserveAspectRatio="xMidYMid slice" clip-path="url(#{clip_id})" '
             f'xlink:href="{data_uri}"/>'
         )
-        return "".join(parts)
+        return clip + body
 
-    parts.append(
-        f'<g clip-path="url(#{clip_id})">'
-        f'<rect x="{x}" y="{y}" width="{COVER_SIZE}" height="{COVER_SIZE}" '
-        f'fill="{COLOR_PLACEHOLDER}"/>'
-        f'<text x="{x + COVER_SIZE / 2}" y="{y + COVER_SIZE / 2 + 5}" '
-        f'text-anchor="middle" font-size="13" font-weight="700" '
-        f'fill="{COLOR_ACCENT_DARK}">NO COVER</text>'
-        f"</g>"
-    )
-    return "".join(parts)
+    return clip + _build_cover_placeholder(x, y)
 
 
 def _build_song_row(
@@ -231,38 +288,66 @@ def _build_song_row(
     badge_x = content_x + content_width - 16 - DURATION_BADGE_WIDTH
     badge_y = row_y + (ROW_HEIGHT - 32) / 2
 
-    album = _truncate(song.album or "Unknown Album", META_MAX_UNITS)
-    meta = f"ID {song.song_id} | {album}"
+    text_clip_x = body_x
+    text_clip_width = max(badge_x - TEXT_BLOCK_GAP - body_x, 1.0)
+    text_clip_y = row_y + 14
+    text_clip_height = ROW_HEIGHT - 28
+
+    album = _truncate(song.album, META_MAX_UNITS, "Unknown Album")
+    meta = f"ID {escape(song.song_id)} | {escape(album)}"
 
     return "".join(
         [
-            f'<rect x="{content_x}" y="{row_y}" width="{content_width}" '
-            f'height="{ROW_HEIGHT}" rx="{ROW_RADIUS}" fill="{COLOR_CARD}" '
-            f'stroke="{COLOR_BORDER}"/>',
-            f'<text x="{content_x + INDEX_COLUMN_WIDTH / 2}" '
-            f'y="{row_y + ROW_HEIGHT / 2 + 9}" text-anchor="middle" '
-            f'font-size="24" font-weight="800" fill="{COLOR_ACCENT}">'
-            f"{index:02d}</text>",
+            (
+                f'<rect x="{content_x}" y="{row_y}" width="{content_width}" '
+                f'height="{ROW_HEIGHT}" rx="{ROW_RADIUS}" fill="{COLOR_CARD}" '
+                f'stroke="{COLOR_BORDER}"/>'
+            ),
+            (
+                f'<text x="{content_x + INDEX_COLUMN_WIDTH / 2}" '
+                f'y="{row_y + ROW_HEIGHT / 2 + 9}" text-anchor="middle" '
+                f'font-size="24" font-weight="800" fill="{COLOR_ACCENT}">'
+                f"{index:02d}</text>"
+            ),
             _build_cover_block(
                 index=index,
                 x=cover_x,
                 y=cover_y,
                 data_uri=data_uri,
             ),
-            f'<text x="{body_x}" y="{row_y + 38}" font-size="21" '
-            f'font-weight="800" fill="{COLOR_TEXT_STRONG}">'
-            f"{escape(_truncate(song.name, TITLE_MAX_UNITS))}</text>",
-            f'<text x="{body_x}" y="{row_y + 64}" font-size="16" '
-            f'font-weight="600" fill="{COLOR_TEXT_MUTED}">'
-            f"{escape(_truncate(song.artist, ARTIST_MAX_UNITS))}</text>",
-            f'<text x="{body_x}" y="{row_y + 86}" font-size="13" '
-            f'fill="{COLOR_TEXT_SOFT}">{escape(meta)}</text>',
-            f'<rect x="{badge_x}" y="{badge_y}" width="{DURATION_BADGE_WIDTH}" '
-            f'height="32" rx="16" fill="{COLOR_BADGE}" '
-            f'stroke="{COLOR_BADGE_BORDER}"/>',
-            f'<text x="{badge_x + DURATION_BADGE_WIDTH / 2}" y="{badge_y + 21}" '
-            f'text-anchor="middle" font-size="14" font-weight="700" '
-            f'fill="{COLOR_ACCENT_DARK}">{song.duration}s</text>',
+            (
+                f'<clipPath id="text-clip-{index}">'
+                f'<rect x="{text_clip_x}" y="{text_clip_y}" '
+                f'width="{text_clip_width}" height="{text_clip_height}"/>'
+                f"</clipPath>"
+            ),
+            f'<g clip-path="url(#text-clip-{index})">',
+            (
+                f'<text x="{body_x}" y="{row_y + 38}" font-size="21" '
+                f'font-weight="800" fill="{COLOR_TEXT_STRONG}">'
+                f"{escape(_truncate(song.name, TITLE_MAX_UNITS, 'Unknown Track'))}</text>"
+            ),
+            (
+                f'<text x="{body_x}" y="{row_y + 64}" font-size="16" '
+                f'font-weight="600" fill="{COLOR_TEXT_MUTED}">'
+                f"{escape(_truncate(song.artist, ARTIST_MAX_UNITS, 'Unknown Artist'))}"
+                f"</text>"
+            ),
+            (
+                f'<text x="{body_x}" y="{row_y + 86}" font-size="13" '
+                f'fill="{COLOR_TEXT_SOFT}">{meta}</text>'
+            ),
+            "</g>",
+            (
+                f'<rect x="{badge_x}" y="{badge_y}" width="{DURATION_BADGE_WIDTH}" '
+                f'height="32" rx="16" fill="{COLOR_BADGE}" '
+                f'stroke="{COLOR_BADGE_BORDER}"/>'
+            ),
+            (
+                f'<text x="{badge_x + DURATION_BADGE_WIDTH / 2}" y="{badge_y + 21}" '
+                f'text-anchor="middle" font-size="14" font-weight="700" '
+                f'fill="{COLOR_ACCENT_DARK}">{_format_duration(song.duration)}</text>'
+            ),
         ]
     )
 
@@ -299,19 +384,27 @@ def _build_search_results_svg(
 
     header = "".join(
         [
-            f'<text x="{content_x}" y="{content_y + 16}" font-size="13" '
-            f'font-weight="700" letter-spacing="2" fill="{COLOR_ACCENT}">'
-            f"KUWO SEARCH</text>",
-            f'<text x="{content_x}" y="{content_y + 54}" font-size="30" '
-            f'font-weight="800" fill="{COLOR_TEXT_STRONG}">'
-            f"Kuwo Search Results</text>",
-            f'<rect x="{count_badge_x}" y="{content_y + 22}" '
-            f'width="{COUNT_BADGE_WIDTH}" height="34" rx="17" '
-            f'fill="{COLOR_BADGE}" stroke="{COLOR_BADGE_BORDER}"/>',
-            f'<text x="{count_badge_x + COUNT_BADGE_WIDTH / 2}" '
-            f'y="{content_y + 44}" text-anchor="middle" font-size="14" '
-            f'font-weight="700" fill="{COLOR_ACCENT_DARK}">'
-            f"{song_count} Tracks</text>",
+            (
+                f'<text x="{content_x}" y="{content_y + 16}" font-size="13" '
+                f'font-weight="700" letter-spacing="2" fill="{COLOR_ACCENT}">'
+                f"KUWO SEARCH</text>"
+            ),
+            (
+                f'<text x="{content_x}" y="{content_y + 54}" font-size="30" '
+                f'font-weight="800" fill="{COLOR_TEXT_STRONG}">'
+                f"Kuwo Search Results</text>"
+            ),
+            (
+                f'<rect x="{count_badge_x}" y="{content_y + 22}" '
+                f'width="{COUNT_BADGE_WIDTH}" height="34" rx="17" '
+                f'fill="{COLOR_BADGE}" stroke="{COLOR_BADGE_BORDER}"/>'
+            ),
+            (
+                f'<text x="{count_badge_x + COUNT_BADGE_WIDTH / 2}" '
+                f'y="{content_y + 44}" text-anchor="middle" font-size="14" '
+                f'font-weight="700" fill="{COLOR_ACCENT_DARK}">'
+                f"{song_count} Tracks</text>"
+            ),
         ]
     )
 
@@ -321,21 +414,27 @@ def _build_search_results_svg(
 
     svg = "".join(
         [
-            f'<svg xmlns="{SVG_NAMESPACE}" xmlns:xlink="{XLINK_NAMESPACE}" '
-            f'width="{CANVAS_WIDTH}" height="{canvas_height}" '
-            f'viewBox="0 0 {CANVAS_WIDTH} {canvas_height}" '
-            f'font-family="sans-serif">',
+            (
+                f'<svg xmlns="{SVG_NAMESPACE}" xmlns:xlink="{XLINK_NAMESPACE}" '
+                f'width="{CANVAS_WIDTH}" height="{canvas_height}" '
+                f'viewBox="0 0 {CANVAS_WIDTH} {canvas_height}" '
+                f'font-family="sans-serif">'
+            ),
             "<defs>",
             '<linearGradient id="canvas-bg" x1="0" y1="0" x2="1" y2="1">',
             '<stop offset="0" stop-color="#f6efe4"/>',
             '<stop offset="1" stop-color="#dbe8f7"/>',
             "</linearGradient>",
             "</defs>",
-            f'<rect width="{CANVAS_WIDTH}" height="{canvas_height}" '
-            f'fill="url(#canvas-bg)"/>',
-            f'<rect x="{panel_x}" y="{panel_x}" width="{panel_width}" '
-            f'height="{panel_height}" rx="{PANEL_RADIUS}" fill="{COLOR_PANEL}" '
-            f'fill-opacity="0.9" stroke="{COLOR_BORDER}"/>',
+            (
+                f'<rect width="{CANVAS_WIDTH}" height="{canvas_height}" '
+                f'fill="url(#canvas-bg)"/>'
+            ),
+            (
+                f'<rect x="{panel_x}" y="{panel_x}" width="{panel_width}" '
+                f'height="{panel_height}" rx="{PANEL_RADIUS}" fill="{COLOR_PANEL}" '
+                f'fill-opacity="0.9" stroke="{COLOR_BORDER}"/>'
+            ),
             header,
             "".join(rows),
             "</svg>",
@@ -372,7 +471,8 @@ async def _render_search_results_image(
         font_files,
         font_dirs,
     )
-    image_bytes = render_svg_to_png(
+    image_bytes = await asyncio.to_thread(
+        render_svg_to_png,
         svg,
         scale=IMAGE_SCALE,
         font_files=font_files,

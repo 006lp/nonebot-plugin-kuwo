@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import importlib
 from pathlib import Path
 
@@ -110,32 +109,16 @@ async def test_kwsearch_command_returns_image_results(
     uniseg = import_uniseg_module()
     dummy_matcher = DummyMatcher()
     render_calls: dict[str, object] = {}
-    cover_bytes = b"\x89PNG\r\n\x1a\nfake-cover"
-
-    class FakeCoverResponse:
-        content = cover_bytes
-        headers = {"content-type": "image/png"}
-
-        def raise_for_status(self) -> None:
-            return None
-
-    class FakeHttpClient:
-        def __init__(self) -> None:
-            self.requested: list[str] = []
-
-        async def get(self, url: str, timeout: float | None = None):
-            self.requested.append(url)
-            return FakeCoverResponse()
-
-    fake_client = FakeHttpClient()
+    cover_calls: dict[str, object] = {}
 
     async def fake_search(keyword: str, limit: int):
         assert keyword == "Morning Dew Reflection"
         assert limit == 5
         return [build_search_song(web_albumpic_short="120/s4s64/98/1370027605.jpg")]
 
-    async def fake_get_http_client():
-        return fake_client
+    async def fake_fetch_cover(song):
+        cover_calls["url"] = song.album_cover_url
+        return "data:image/png;base64,AAAA"
 
     def fake_render_svg_to_png(svg: str, **kwargs) -> bytes:
         render_calls["svg"] = svg
@@ -143,7 +126,7 @@ async def test_kwsearch_command_returns_image_results(
         return b"rendered-image"
 
     monkeypatch.setattr(plugin, "search_songs", fake_search)
-    monkeypatch.setattr(render_module, "get_http_client", fake_get_http_client)
+    monkeypatch.setattr(render_module, "_fetch_cover_data_uri", fake_fetch_cover)
     monkeypatch.setattr(render_module, "render_svg_to_png", fake_render_svg_to_png)
     monkeypatch.setattr(plugin, "kwsearch", dummy_matcher)
     monkeypatch.setattr(
@@ -164,11 +147,11 @@ async def test_kwsearch_command_returns_image_results(
         [uniseg.Image(raw=b"rendered-image")]
     )
 
-    assert fake_client.requested == [
+    assert cover_calls["url"] == (
         "http://img1.kwcdn.kuwo.cn/star/albumcover/120/s4s64/98/1370027605.jpg"
-    ]
-    encoded_cover = base64.b64encode(cover_bytes).decode("ascii")
-    assert f"data:image/png;base64,{encoded_cover}" in render_calls["svg"]
+    )
+    assert "data:image/png;base64,AAAA" in render_calls["svg"]
+    assert "3:02" in render_calls["svg"]
     assert render_calls["scale"] == 2.0
 
 

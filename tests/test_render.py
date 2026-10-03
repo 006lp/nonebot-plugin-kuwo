@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import re
 import struct
+import threading
 from pathlib import Path
 
 import httpx
@@ -58,6 +59,64 @@ def canvas_height(svg: str) -> int:
     return int(match.group(1))
 
 
+class FakeStreamResponse:
+    def __init__(
+        self,
+        content: bytes,
+        *,
+        content_type: str = "image/png",
+        status_code: int = 200,
+    ) -> None:
+        self.content = content
+        self.headers = {"content-type": content_type}
+        self.status_code = status_code
+        self.body_read = False
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPError(f"status {self.status_code}")
+
+    async def aiter_bytes(self):
+        self.body_read = True
+        chunk_size = max(1, len(self.content) // 3)
+        for start in range(0, len(self.content), chunk_size):
+            yield self.content[start : start + chunk_size]
+
+
+class FakeStreamClient:
+    def __init__(self, response: FakeStreamResponse | None = None) -> None:
+        self.response = response
+        self.requested: list[str] = []
+
+    def stream(self, method: str, url: str, **kwargs: object):
+        self.requested.append(url)
+        if self.response is None:
+            raise httpx.ConnectError("boom")
+        return _AsyncContext(self.response)
+
+
+class _AsyncContext:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    async def __aenter__(self):
+        return self._value
+
+    async def __aexit__(self, *exc_info: object) -> bool:
+        return False
+
+
+def patch_cover_client(
+    monkeypatch: pytest.MonkeyPatch, client: FakeStreamClient
+) -> None:
+    render = import_render_module()
+
+    async def fake_get_http_client():
+        return client
+
+    monkeypatch.setattr(render, "get_http_client", fake_get_http_client)
+
+
 def test_native_renderer_scales_output() -> None:
     qmc = import_qmc_module()
     svg = (
@@ -70,20 +129,45 @@ def test_native_renderer_scales_output() -> None:
     assert png_size(qmc.render_svg_to_png(svg, scale=2.0)) == (200, 100)
 
 
-def test_native_renderer_rejects_invalid_scale() -> None:
+@pytest.mark.parametrize("scale", [0.0, -1.0, 9.0, float("nan"), float("inf")])
+def test_native_renderer_rejects_invalid_scale(scale: float) -> None:
     qmc = import_qmc_module()
     svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
 
     with pytest.raises(ValueError):
-        qmc.render_svg_to_png(svg, scale=0.0)
+        qmc.render_svg_to_png(svg, scale=scale)
+
+
+def test_native_renderer_rejects_oversized_document() -> None:
+    qmc = import_qmc_module()
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20000" height="10"/>'
+
+    with pytest.raises(ValueError):
+        qmc.render_svg_to_png(svg)
 
 
 def test_truncate_counts_cjk_as_two_units() -> None:
     render = import_render_module()
 
     assert render._truncate("Summer Pockets", 40) == "Summer Pockets"
-    assert render._truncate("夏日口袋", 4) == "夏日…"
+    assert render._truncate("夏日口袋", 6) == "夏日…"
     assert render._truncate("   ", 4) == ""
+
+
+def test_truncate_reserves_room_for_the_ellipsis() -> None:
+    render = import_render_module()
+
+    assert render._truncate("夏日口袋", 4) == "夏…"
+    assert render._truncate("", 40, "Unknown Track") == "Unknown Track"
+
+
+def test_format_duration_pads_seconds() -> None:
+    render = import_render_module()
+
+    assert render._format_duration(0) == "0:00"
+    assert render._format_duration(61) == "1:01"
+    assert render._format_duration(182) == "3:02"
+    assert render._format_duration(-5) == "0:00"
 
 
 def test_sniff_image_mime_detects_supported_formats() -> None:
@@ -116,10 +200,28 @@ def test_build_search_results_svg_embeds_cover_and_metadata() -> None:
     assert "data:image/png;base64,AAAA" in svg
     assert "Summer Pockets" in svg
     assert "夏日口袋" in svg
-    assert "NO COVER" in svg
+    assert "3:02" in svg
+    assert "1:01" in svg
     assert "553152678" in svg
-    assert "182s" in svg
     assert "2 Tracks" in svg
+
+
+def test_build_search_results_svg_draws_vector_placeholder() -> None:
+    render = import_render_module()
+    svg = render._build_search_results_svg([build_search_song()], [None])
+
+    assert "NO COVER" not in svg
+    assert "<circle" in svg
+    assert 'clip-path="url(#cover-clip-1)"' not in svg or "cover-clip-1" in svg
+    assert "cover-clip-1" in svg
+
+
+def test_build_search_results_svg_clips_text_block() -> None:
+    render = import_render_module()
+    svg = render._build_search_results_svg([build_search_song()], [None])
+
+    assert '<clipPath id="text-clip-1">' in svg
+    assert '<g clip-path="url(#text-clip-1)">' in svg
 
 
 def test_build_search_results_svg_grows_with_row_count() -> None:
@@ -175,15 +277,7 @@ async def test_fetch_cover_data_uri_returns_none_on_http_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     render = import_render_module()
-
-    class FailingClient:
-        async def get(self, url: str, timeout: float | None = None):
-            raise httpx.ConnectError("boom")
-
-    async def fake_get_http_client():
-        return FailingClient()
-
-    monkeypatch.setattr(render, "get_http_client", fake_get_http_client)
+    patch_cover_client(monkeypatch, FakeStreamClient(None))
 
     song = build_search_song(web_albumpic_short=COVER_PATH)
 
@@ -191,26 +285,40 @@ async def test_fetch_cover_data_uri_returns_none_on_http_error(
 
 
 @pytest.mark.asyncio
-async def test_fetch_cover_data_uri_rejects_unsupported_payload(
+async def test_fetch_cover_data_uri_rejects_non_image_content_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     render = import_render_module()
+    response = FakeStreamResponse(b"<html></html>", content_type="text/html")
+    patch_cover_client(monkeypatch, FakeStreamClient(response))
 
-    class HtmlResponse:
-        content = b"<html></html>"
-        headers = {"content-type": "text/html"}
+    song = build_search_song(web_albumpic_short=COVER_PATH)
 
-        def raise_for_status(self) -> None:
-            return None
+    assert await render._fetch_cover_data_uri(song) is None
+    assert response.body_read is False
 
-    class HtmlClient:
-        async def get(self, url: str, timeout: float | None = None):
-            return HtmlResponse()
 
-    async def fake_get_http_client():
-        return HtmlClient()
+@pytest.mark.asyncio
+async def test_fetch_cover_data_uri_rejects_mislabelled_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    render = import_render_module()
+    response = FakeStreamResponse(b"<html></html>", content_type="image/png")
+    patch_cover_client(monkeypatch, FakeStreamClient(response))
 
-    monkeypatch.setattr(render, "get_http_client", fake_get_http_client)
+    song = build_search_song(web_albumpic_short=COVER_PATH)
+
+    assert await render._fetch_cover_data_uri(song) is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_cover_data_uri_rejects_oversized_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    render = import_render_module()
+    monkeypatch.setattr(render, "MAX_COVER_BYTES", 64)
+    response = FakeStreamResponse(PNG_MAGIC + b"x" * 512)
+    patch_cover_client(monkeypatch, FakeStreamClient(response))
 
     song = build_search_song(web_albumpic_short=COVER_PATH)
 
@@ -222,30 +330,13 @@ async def test_fetch_cover_data_uri_encodes_cover_as_data_uri(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     render = import_render_module()
-    cover_bytes = PNG_MAGIC + b"fake-cover"
-    requested: list[str] = []
-
-    class CoverResponse:
-        content = cover_bytes
-        headers = {"content-type": "image/png"}
-
-        def raise_for_status(self) -> None:
-            return None
-
-    class CoverClient:
-        async def get(self, url: str, timeout: float | None = None):
-            requested.append(url)
-            return CoverResponse()
-
-    async def fake_get_http_client():
-        return CoverClient()
-
-    monkeypatch.setattr(render, "get_http_client", fake_get_http_client)
+    client = FakeStreamClient(FakeStreamResponse(PNG_MAGIC + b"fake-cover"))
+    patch_cover_client(monkeypatch, client)
 
     song = build_search_song(web_albumpic_short=COVER_PATH)
     data_uri = await render._fetch_cover_data_uri(song)
 
-    assert requested == [COVER_URL]
+    assert client.requested == [COVER_URL]
     assert data_uri is not None
     assert data_uri.startswith("data:image/png;base64,")
 
@@ -266,6 +357,7 @@ async def test_render_search_results_image_mode_returns_image(
     def fake_render_svg_to_png(svg: str, **kwargs) -> bytes:
         calls["svg"] = svg
         calls["kwargs"] = kwargs
+        calls["thread"] = threading.current_thread().name
         return b"native-image"
 
     monkeypatch.setattr(render, "_fetch_cover_data_uri", fake_fetch_cover)
@@ -284,6 +376,7 @@ async def test_render_search_results_image_mode_returns_image(
         "font_files": [],
         "font_dirs": [],
     }
+    assert calls["thread"] != threading.main_thread().name
 
 
 @pytest.mark.asyncio
@@ -321,7 +414,6 @@ async def test_render_search_results_text_mode_skips_cover_download(
 
     async def fake_fetch_cover(song):
         downloads.append(song.song_id)
-        return None
 
     monkeypatch.setattr(render, "_fetch_cover_data_uri", fake_fetch_cover)
 
