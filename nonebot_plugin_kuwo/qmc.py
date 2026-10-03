@@ -20,6 +20,14 @@ class _QmcExtension(Protocol):
         ekey: str,
         chunk_size: int = 65536,
     ) -> None: ...
+    def render_svg_to_png(
+        self,
+        svg: str,
+        scale: float = 1.0,
+        font_files: list[str] | None = None,
+        font_dirs: list[str] | None = None,
+        load_system_fonts: bool = True,
+    ) -> bytes: ...
 
 
 @lru_cache(maxsize=1)
@@ -67,10 +75,30 @@ def decrypt_mflac_file(
     return target_path
 
 
+def render_svg_to_png(
+    svg: str,
+    *,
+    scale: float = 1.0,
+    font_files: list[str | Path] | None = None,
+    font_dirs: list[str | Path] | None = None,
+    load_system_fonts: bool = True,
+) -> bytes:
+    """Rasterise an SVG document into PNG bytes via the native resvg backend."""
+
+    return _load_extension().render_svg_to_png(
+        svg,
+        scale,
+        [str(item) for item in font_files] if font_files else None,
+        [str(item) for item in font_dirs] if font_dirs else None,
+        load_system_fonts,
+    )
+
+
 __all__ = [
     "decrypt_mflac_file",
     "decrypt_qmc_bytes",
     "derive_qmc_key",
     "extract_qmc_raw_key_from_ekey",
     "kuwo_base64_decrypt",
+    "render_svg_to_png",
 ]

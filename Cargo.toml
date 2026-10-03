@@ -10,4 +10,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 base64 = "0.22.1"
+fontdb = { version = "0.24", default-features = false }
 pyo3 = { version = "0.29.3", features = ["extension-module", "abi3-py310"] }
+resvg = { version = "0.48", default-features = false, features = [
+    "raster-images",
+    "system-fonts",
+    "text",
+] }

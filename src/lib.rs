@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 mod qmc;
+mod render;
 
 #[pyfunction]
 fn kuwo_base64_decrypt(value: &str) -> PyResult<String> {
@@ -48,6 +49,26 @@ fn decrypt_mflac_file(
     Ok(py.detach(|| qmc::decrypt_mflac_file(source_path, target_path, ekey, chunk_size))?)
 }
 
+#[pyfunction]
+#[pyo3(signature = (svg, scale = 1.0, font_files = None, font_dirs = None, load_system_fonts = true))]
+fn render_svg_to_png(
+    py: Python<'_>,
+    svg: &str,
+    scale: f32,
+    font_files: Option<Vec<String>>,
+    font_dirs: Option<Vec<String>>,
+    load_system_fonts: bool,
+) -> PyResult<Py<PyBytes>> {
+    let font_files = font_files.unwrap_or_default();
+    let font_dirs = font_dirs.unwrap_or_default();
+    let png = py
+        .detach(|| {
+            render::render_svg_to_png(svg, scale, &font_files, &font_dirs, load_system_fonts)
+        })
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    Ok(PyBytes::new(py, &png).into())
+}
+
 #[pymodule(gil_used = false)]
 #[pyo3(name = "_qmc_rs")]
 fn qmc_rs(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -56,5 +77,6 @@ fn qmc_rs(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(derive_qmc_key, module)?)?;
     module.add_function(wrap_pyfunction!(decrypt_qmc_bytes, module)?)?;
     module.add_function(wrap_pyfunction!(decrypt_mflac_file, module)?)?;
+    module.add_function(wrap_pyfunction!(render_svg_to_png, module)?)?;
     Ok(())
 }
