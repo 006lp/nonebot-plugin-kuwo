@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- 图片列表渲染从 `nonebot-plugin-htmlrender` 迁移到 Rust 原生扩展内置的 `resvg`，移除对 Playwright / Chromium 的运行时依赖
+- 原生扩展新增 `render_svg_to_png`，提供 SVG 字符串到 PNG 字节的渲染接口，并内置字体数据库缓存
+- 原生渲染器自动挑选可用的 CJK 字体作为默认字体族，修复无 Arial 环境下文本整段丢失的问题
+- 新增 `KUWO_RENDER_FONT_FILES` 与 `KUWO_RENDER_FONT_DIRS`，用于在缺少中文字体的环境中补充字体来源
+- 搜索结果图片改为 SVG 模板渲染，封面图下载后以 base64 内嵌，下载失败时使用占位块
+- 移除 `RENDER_BACKEND=playwright` 相关配置说明与测试环境中的 htmlrender 生命周期钩子过滤
+
 ## 0.2.7 - 2026-10-03
 
 - 刷新 Python 与 Rust 依赖锁文件，运行依赖升级至 `nonebot-plugin-alconna>=0.62.1`，Rust 绑定升级至 `pyo3 0.29.3`
@@ -8,7 +17,6 @@
 - 统一构建后端与 Release 工作流的 maturin 版本，CI / sdist 依赖同步增加 `--locked` 约束
 - 适配 Ruff 0.16 默认检查规则：清理失效的 `E402` 忽略注释，明确图片渲染失败回退的异常捕获例外，并为测试断言中的拼接字符串补充括号
 - 更新开发环境与依赖刷新说明，使用 Python `3.13.16` / Rust `1.99.0` 验证构建和测试
-
 ## 0.2.6 - 2026-07-01
 
 - `file` 模式上传文件名改为 `[quality]歌曲名 - 歌手.扩展名`，并保留 Alconna `uniseg` 跨适配器发送路径

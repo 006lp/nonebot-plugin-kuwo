@@ -88,7 +88,6 @@ plugins = ["nonebot_plugin_kuwo"]
 ```dotenv
 COMMAND_START=["/"]
 LOG_LEVEL=INFO
-RENDER_BACKEND=playwright
 
 KUWO_SEARCH_LIMIT=5
 KUWO_LIST_RENDER_MODE=text
@@ -97,6 +96,8 @@ KUWO_DEFAULT_QUALITY=standard
 # KUWO_TRACK_PROXY_URL=http://127.0.0.1:7890
 KUWO_TRACK_CACHE_RETENTION_DAYS=1
 KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
+# KUWO_RENDER_FONT_FILES=[]
+# KUWO_RENDER_FONT_DIRS=[]
 ```
 
 配置项说明：
@@ -110,9 +111,10 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 | `KUWO_TRACK_PROXY_URL` | 未配置 | 由于版权相关问题，海外用户请求歌曲直链时需要使用境内 HTTP/HTTPS 代理，例如 `http://user:pass@127.0.0.1:7890` |
 | `KUWO_TRACK_CACHE_RETENTION_DAYS` | `1` | 文件缓存保留天数，`0` 表示关闭按天清理 |
 | `KUWO_TRACK_CACHE_MAX_SIZE_MB` | `1024` | 文件缓存总大小上限，`0` 表示关闭按大小清理 |
+| `KUWO_RENDER_FONT_FILES` | 未配置 | 图片渲染额外加载的字体文件，适合运行环境缺少中文字体的场景 |
+| `KUWO_RENDER_FONT_DIRS` | 未配置 | 图片渲染额外扫描的字体目录 |
 
-`RENDER_BACKEND` 是 `nonebot-plugin-htmlrender` 的配置项。使用 `KUWO_LIST_RENDER_MODE=image` 时需要设置为 `playwright`；未配置时图片渲染会失败并自动回退到文本列表。当前项目依赖限定为 `nonebot-plugin-htmlrender>=0.7.1,<0.8`，暂时避开 0.8 系列的破坏性更新。默认 `RENDER_STARTUP_MODE=off` 时不会在 NoneBot 启动阶段预热浏览器，首次图片渲染会按需启动，详情见 [nonebot-plugin-htmlrender 文档](https://github.com/kexue-z/nonebot-plugin-htmlrender)。
-
+图片列表由 Rust 原生扩展内置的 `resvg` 渲染，随 wheel 一起分发，不需要 Playwright / Chromium，也不需要额外安装浏览器系统级依赖。中文歌名依赖宿主系统已安装的 CJK 字体；若运行环境（例如精简 Docker 镜像）没有任何中文字体，可用 `KUWO_RENDER_FONT_FILES` / `KUWO_RENDER_FONT_DIRS` 显式指定字体文件或字体目录。
 音质枚举：
 
 - `standard`
@@ -140,8 +142,8 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 - `text`
   - 每行格式：`序号. 音乐id 歌曲名-歌手`
 - `image`
-  - 使用 `nonebot-plugin-htmlrender` 生成图片列表
-  - 直接复用搜索接口返回的 `web_albumpic_short`
+  - 使用 Rust 原生扩展（`resvg`）把搜索列表渲染成 PNG
+  - 封面图先下载并以 base64 内嵌，下载失败时使用占位块
   - 渲染失败时自动回退到文本
 
 ### 单曲输出
@@ -258,7 +260,8 @@ nonebot_plugin_kuwo/
 ├── render.py
 └── utils.py
 src/
-└── qmc.rs
+├── qmc.rs
+└── render.rs
 tests/
 ```
 
