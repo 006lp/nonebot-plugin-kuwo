@@ -258,7 +258,7 @@ dependencies = [
 
 [[package]]
 name = "nonebot-plugin-kuwo-rust"
-version = "0.3.0-alpha1"
+version = "0.3.0-alpha2"
 dependencies = [
  "base64 0.22.1",
  "imagesize",

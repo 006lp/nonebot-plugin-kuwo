@@ -3,7 +3,9 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
+import httpx
 import pytest
+import respx
 from nonebot.compat import type_validate_python
 
 
@@ -306,6 +308,97 @@ async def test_kw_command_returns_music_card(
         await plugin.handle_kw(arp)
 
     assert dummy_matcher.message == expected
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("detail_state", ["available", "missing", "network_error"])
+async def test_kw_card_uses_kwid_detail_cover_or_falls_back_to_search(
+    monkeypatch: pytest.MonkeyPatch, detail_state: str
+) -> None:
+    plugin = import_plugin_module()
+    config = import_config_module()
+    source = importlib.import_module("nonebot_plugin_kuwo.data_source")
+    kw_arp = plugin.kw.command().parse("/kw otherside")
+    kwid_arp = plugin.kwid.command().parse("/kwid 652507745")
+    assert kw_arp.matched and kwid_arp.matched
+    by_keyword = DummyMatcher()
+    by_id = DummyMatcher()
+    monkeypatch.setattr(plugin, "kw", by_keyword)
+    monkeypatch.setattr(plugin, "kwid", by_id)
+    monkeypatch.setattr(
+        plugin,
+        "get_runtime_config",
+        lambda: config.Config(kuwo_track_render_mode="card"),
+    )
+    song = {
+        "MUSICRID": "MUSIC_652507745",
+        "NAME": "Otherside",
+        "ARTIST": "Minecraft&Peter Hont",
+        "ALBUM": "Minecraft Dungeons II (Original Game Soundtrack)",
+        "DURATION": "211",
+        "web_albumpic_short": "120/s4s13/34/357706223.jpg",
+    }
+    detail_cover = "http://img1.kuwo.cn/star/albumcover/120/s4s13/34/357706223.jpg"
+    search_cover = (
+        "http://img1.kwcdn.kuwo.cn/star/albumcover/120/s4s13/34/357706223.jpg"
+    )
+    respx.get(source.SEARCH_API_URL).mock(
+        return_value=httpx.Response(200, json={"TOTAL": "1", "abslist": [song]})
+    )
+    respx.get(source.TRACK_API_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 200,
+                "data": {
+                    "rid": 652507745,
+                    "bitrate": 128,
+                    "duration": 211,
+                    "format": "mp3",
+                    "url": "http://example.com/otherside.mp3",
+                },
+            },
+        )
+    )
+    route = respx.get(source.DETAIL_API_URL)
+    if detail_state == "network_error":
+        route.mock(side_effect=httpx.ConnectError("detail unavailable"))
+    else:
+        route.mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "errorcode": 0,
+                    "result": "ok",
+                    "songs": [
+                        {
+                            "id": 652507745,
+                            "name": song["NAME"],
+                            "artist": song["ARTIST"],
+                            "album": song["ALBUM"],
+                            "albumPic": detail_cover
+                            if detail_state == "available"
+                            else None,
+                        }
+                    ],
+                },
+            )
+        )
+    try:
+        with pytest.raises(MatcherFinished):
+            await plugin.handle_kw(kw_arp)
+        card = by_keyword.message[0]
+        assert card.audio == "http://example.com/otherside.mp3"
+        if detail_state == "available":
+            with pytest.raises(MatcherFinished):
+                await plugin.handle_kwid(kwid_arp)
+            assert card.thumbnail == by_id.message[0].thumbnail == detail_cover
+            assert by_keyword.message == by_id.message
+        else:
+            assert card.thumbnail == search_cover
+    finally:
+        await source.close_http_client()
 
 
 @pytest.mark.asyncio

@@ -125,8 +125,10 @@ async def test_get_song_media_returns_direct_url_and_cover(
     track_route = respx.get(data_source.TRACK_API_URL).mock(
         return_value=httpx.Response(200, json=payload)
     )
-    respx.get(data_source.COVER_API_URL).mock(
-        return_value=httpx.Response(200, text="http://example.com/cover.jpg")
+    detail_payload = deepcopy(DETAIL_RESPONSE)
+    detail_payload["songs"][0]["id"] = 11713652
+    respx.get(data_source.DETAIL_API_URL).mock(
+        return_value=httpx.Response(200, json=detail_payload)
     )
 
     media = await data_source.get_song_media("11713652", "2000kflac")
@@ -142,9 +144,68 @@ async def test_get_song_media_returns_direct_url_and_cover(
     assert media.bitrate == 2000
     assert media.duration == 242
     assert media.direct_url == "http://example.com/song.flac"
-    assert media.cover_url == "http://example.com/cover.jpg"
+    assert media.cover_url == "http://example.com/album.jpg"
 
     await data_source.close_http_client()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_search_and_id_resources_share_detail_cover() -> None:
+    data_source = import_data_source_module()
+    track = deepcopy(TRACK_RESPONSE)
+    track["data"]["rid"] = 652507745
+    detail = deepcopy(DETAIL_RESPONSE)
+    detail["songs"][0].update(
+        id=652507745,
+        name="Otherside",
+        albumPic="http://img1.kuwo.cn/star/albumcover/120/s4s13/34/357706223.jpg",
+    )
+    respx.get(data_source.TRACK_API_URL).mock(
+        return_value=httpx.Response(200, json=track)
+    )
+    respx.get(data_source.DETAIL_API_URL).mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    try:
+        search_media = await data_source.get_song_media("652507745", "128kmp3")
+        id_media = await data_source.get_song_detailed_media("652507745", "128kmp3")
+        assert (
+            search_media.cover_url
+            == id_media.cover_url
+            == detail["songs"][0]["albumPic"]
+        )
+    finally:
+        await data_source.close_http_client()
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("kind", ["network", "json", "schema", "empty"])
+async def test_song_media_keeps_audio_when_detail_cover_is_unavailable(
+    kind: str,
+) -> None:
+    data_source = import_data_source_module()
+    respx.get(data_source.TRACK_API_URL).mock(
+        return_value=httpx.Response(200, json=TRACK_RESPONSE)
+    )
+    route = respx.get(data_source.DETAIL_API_URL)
+    if kind == "network":
+        route.mock(side_effect=httpx.ConnectError("unavailable"))
+    elif kind == "json":
+        route.mock(return_value=httpx.Response(200, text="not json"))
+    elif kind == "schema":
+        route.mock(return_value=httpx.Response(200, json={}))
+    else:
+        payload = deepcopy(DETAIL_RESPONSE)
+        payload["songs"][0]["albumPic"] = None
+        route.mock(return_value=httpx.Response(200, json=payload))
+    try:
+        media = await data_source.get_song_media("11713652", "2000kflac")
+        assert media.direct_url == "http://example.com/song.flac"
+        assert media.cover_url is None
+    finally:
+        await data_source.close_http_client()
 
 
 @pytest.mark.asyncio

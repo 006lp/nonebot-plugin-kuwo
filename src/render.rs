@@ -78,23 +78,28 @@ fn build_font_database(
 ) -> Result<ResolvedFonts, String> {
     let mut database = fontdb::Database::new();
 
-    if load_system_fonts {
-        database.load_system_fonts();
-    }
-
-    for directory in font_dirs {
-        database.load_fonts_dir(directory);
-    }
-
     for file in font_files {
         database
             .load_font_file(file)
             .map_err(|error| format!("failed to load font file {file}: {error}"))?;
     }
 
+    for directory in font_dirs {
+        database.load_fonts_dir(directory);
+    }
+
+    // Explicit sources take priority over system fonts, including the bundled
+    // default passed by the plugin. File order is preserved before directories.
+    let explicit_family = database
+        .faces()
+        .find_map(|face| face.families.first().map(|(name, _)| name.clone()));
+    if load_system_fonts {
+        database.load_system_fonts();
+    }
+
     // Without this the generic families stay pinned to Arial / Times New Roman,
     // which silently drops every glyph on hosts that ship neither.
-    let default_family = select_default_family(&database);
+    let default_family = explicit_family.or_else(|| select_default_family(&database));
     if let Some(family) = &default_family {
         database.set_sans_serif_family(family.clone());
         database.set_serif_family(family.clone());
@@ -141,8 +146,8 @@ fn resolve_fonts(
 /// Rasterise an SVG string into PNG bytes.
 ///
 /// `scale` multiplies the intrinsic SVG size, so `2.0` yields a HiDPI bitmap.
-/// `font_files` / `font_dirs` register extra fonts on top of the ones found on
-/// the host system, which is what makes CJK text render on minimal images.
+/// `font_files` / `font_dirs` take priority over host system fonts, which remain
+/// available as glyph fallbacks. The first loaded explicit face is the default.
 pub fn render_svg_to_png(
     svg: &str,
     scale: f32,

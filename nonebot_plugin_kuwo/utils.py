@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from collections.abc import Coroutine, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
 
+from nonebot import logger
 from nonebot_plugin_alconna.builtins.uniseg.music_share import (
     MusicShare,
     MusicShareKind,
@@ -159,23 +161,31 @@ def build_track_message(
         return UniMessage([Voice(url=direct_url)])
 
     if render_mode is TrackRenderMode.CARD:
-        return UniMessage(
-            [
-                MusicShare(
-                    kind=MusicShareKind.Custom,
-                    url=direct_url,
-                    audio=direct_url,
-                    title=title or f"歌曲 ID {rid}",
-                    content=format_track_card_content(
-                        artist=artist,
-                        album=album,
-                        bitrate=bitrate,
-                        duration=duration,
-                    ),
-                    thumbnail=cover_url,
-                )
-            ]
+        card = MusicShare(
+            kind=MusicShareKind.Custom,
+            url=direct_url,
+            audio=direct_url,
+            title=title or f"歌曲 ID {rid}",
+            content=format_track_card_content(
+                artist=artist,
+                album=album,
+                bitrate=bitrate,
+                duration=duration,
+            ),
+            thumbnail=cover_url,
         )
+        logger.debug(
+            "Music card payload before protocol signing: rid={}, quality={}, "
+            "bitrate={}, duration={}, artist={}, album={}, payload={}",
+            rid,
+            quality.value,
+            bitrate,
+            duration,
+            artist,
+            album,
+            json.dumps(card.data, ensure_ascii=False),
+        )
+        return UniMessage([card])
 
     text = format_track_text(
         rid=rid,

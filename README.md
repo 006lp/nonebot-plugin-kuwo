@@ -24,7 +24,7 @@
 >
 > 由于上游 `nonebot-plugin-htmlrender` 0.8+ 引入了破坏性更新，本插件**自 `0.3.0` 起，搜索结果图片改用 SVG 模板 + 内置 Rust `resvg` 渲染**，移除对 `nonebot-plugin-htmlrender`、Playwright 和 Chromium 的依赖。
 >
-> `KUWO_LIST_RENDER_MODE=image` 的使用方式保持不变，无需再设置 `RENDER_BACKEND=playwright`。中文显示需要系统安装 CJK 字体，也可通过 `KUWO_RENDER_FONT_FILES` / `KUWO_RENDER_FONT_DIRS` 补充，详见[配置](#配置)。
+> `KUWO_LIST_RENDER_MODE=image` 的使用方式保持不变，无需再设置 `RENDER_BACKEND=playwright`。插件默认自带霞鹜文楷等宽字体，可通过 `KUWO_RENDER_FONT_FILES` / `KUWO_RENDER_FONT_DIRS` 自定义，详见[配置](#配置)。
 >
 > **如果仍希望使用 `nonebot-plugin-htmlrender` 渲染，请固定使用本插件 `0.2.7` 版本**，对应源码见 [legacy/0.2.7 分支](https://github.com/006lp/nonebot-plugin-kuwo/tree/legacy/0.2.7)。该分支从 `v0.2.7` 标签创建，htmlrender 依赖限定为 `>=0.7.1,<0.8`：
 >
@@ -70,7 +70,7 @@ nb plugin install nonebot-plugin-kuwo --upgrade -i https://pypi.org/simple
 uv add nonebot-plugin-kuwo
 ```
 
-安装 GitHub 仓库主分支（当前为 `0.3.0a1` 预发布版本）：
+安装 GitHub 仓库主分支（当前为 `0.3.0a2` 预发布版本）：
 
 ```bash
 uv add git+https://github.com/006lp/nonebot-plugin-kuwo@main
@@ -129,12 +129,12 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 | `KUWO_TRACK_PROXY_URL` | 未配置 | 由于版权相关问题，海外用户请求歌曲直链时需要使用境内 HTTP/HTTPS 代理，例如 `http://user:pass@127.0.0.1:7890` |
 | `KUWO_TRACK_CACHE_RETENTION_DAYS` | `1` | 文件缓存保留天数，`0` 表示关闭按天清理 |
 | `KUWO_TRACK_CACHE_MAX_SIZE_MB` | `1024` | 文件缓存总大小上限，`0` 表示关闭按大小清理 |
-| `KUWO_RENDER_FONT_FILES` | 未配置 | 图片渲染额外加载的字体文件，适合运行环境缺少中文字体的场景 |
-| `KUWO_RENDER_FONT_DIRS` | 未配置 | 图片渲染额外扫描的字体目录 |
+| `KUWO_RENDER_FONT_FILES` | 未配置 | 自定义图片字体文件列表，优先于字体目录和系统字体 |
+| `KUWO_RENDER_FONT_DIRS` | 未配置 | 自定义图片字体目录列表，优先于系统字体 |
 
-图片列表由 Rust 原生扩展内置的 `resvg` 渲染，随 wheel 一起分发，不需要 Playwright / Chromium，也不需要额外安装浏览器系统级依赖。中文歌名依赖宿主系统已安装的 CJK 字体；若运行环境（例如精简 Docker 镜像）没有任何中文字体，可用 `KUWO_RENDER_FONT_FILES` / `KUWO_RENDER_FONT_DIRS` 显式指定字体文件或字体目录。
+图片列表由 Rust 原生扩展内置的 `resvg` 渲染，不需要 Playwright / Chromium。插件随 wheel 和源码包分发霞鹜文楷等宽 `LXGWWenKaiMono-Regular.ttf`（字体族 `LXGW WenKai Mono`），默认使用该字体，精简 Docker 镜像无需额外安装中文字体。
 
-字体配置使用 JSON 数组，例如 `KUWO_RENDER_FONT_FILES=["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]`。没有可用字体或原生渲染失败时，搜索列表会自动回退到文本并记录原因。升级后可移除仅为本插件设置的 `RENDER_BACKEND=playwright`。
+字体配置使用 JSON 数组，例如 `KUWO_RENDER_FONT_FILES=["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]`。存在有效的自定义文件或目录时，使用自定义来源替代默认字体；第一个加载成功的字体族作为默认，文件按配置顺序优先于目录，系统字体用于缺字回退。未配置或所有配置路径不存在时使用内置字体。目录内请放置可用的 TTF / OTF / TTC 字体；更新字体后重启 NoneBot 以刷新字体缓存。没有可用字体或原生渲染失败时，搜索列表会自动回退到文本并记录原因。升级后可移除仅为本插件设置的 `RENDER_BACKEND=playwright`。
 
 音质枚举：
 
@@ -181,6 +181,7 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 - `card`
   - 发送自定义音乐卡片
   - `url` 和 `audio` 都使用真实直链
+  - `/kw` 与 `/kwid` 的封面均优先取自歌曲详情的 `albumPic`；`/kw` 获取详情封面失败或没有封面时复用搜索结果封面，不影响音频直链获取
 - `record`
   - 发送语音段
   - 始终使用 `standard`
@@ -246,7 +247,7 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 
 项目强制使用 `uv`。
 
-当前版本 `0.3.0a1` 的本地验证环境为 Python `3.13.16` / Rust `1.99.0`，插件支持 Python `>=3.10`，原生扩展使用 `abi3-py310`。Python 使用 PEP 440 版本 `0.3.0a1`，Cargo 使用等价的 SemVer 版本 `0.3.0-alpha1`。
+当前版本 `0.3.0a2` 的本地验证环境为 Python `3.13.16` / Rust `1.99.0`，插件支持 Python `>=3.10`，原生扩展使用 `abi3-py310`。Python 使用 PEP 440 版本 `0.3.0a2`，Cargo 使用等价的 SemVer 版本 `0.3.0-alpha2`。
 构建工具使用 `maturin>=1.15.0,<2.0`，Rust 绑定使用 `pyo3 0.29.3`；Release 工作流固定使用 maturin `1.15.0`。
 
 ```bash
@@ -285,6 +286,9 @@ nonebot_plugin_kuwo/
 ├── config.py
 ├── data_source.py
 ├── files.py
+├── fonts/
+│   ├── LXGWWenKaiMono-Regular.ttf
+│   └── LXGWWenKai-OFL-License.txt
 ├── models.py
 ├── qmc.py
 ├── render.py
@@ -309,3 +313,5 @@ tests/
 ## 许可证
 
 本项目使用 [AGPL-3.0](LICENSE) 许可证。
+
+内置的 [霞鹜文楷](https://github.com/lxgw/LxgwWenKai) 等宽字体使用 [SIL Open Font License 1.1](nonebot_plugin_kuwo/fonts/LXGWWenKai-OFL-License.txt)，字体文件与许可证一起分发。

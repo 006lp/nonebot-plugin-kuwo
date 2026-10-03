@@ -24,7 +24,6 @@ from .models import (
 
 SEARCH_API_URL = "http://search.kuwo.cn/r.s"
 TRACK_API_URL = "https://changenotice.kuwo.cn/mobi.s"
-COVER_API_URL = "http://artistpicserver.kuwo.cn/pic.web"
 DETAIL_API_URL = "http://musicpay.kuwo.cn/music.pay"
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 TRACK_USER_ALPHABET = string.ascii_lowercase + string.digits
@@ -244,6 +243,17 @@ async def get_song_link(rid: str, br: str) -> KuwoTrackLinkData:
 
     if track_response.code != 200:
         raise KuwoTrackResponseError(f"track response code is {track_response.code}")
+    logger.debug(
+        "Kuwo track link resolved: requested_rid={}, response_rid={}, br={}, "
+        "format={}, bitrate={}, duration={}, direct_url={}",
+        rid,
+        track_response.data.rid,
+        br,
+        track_response.data.format,
+        track_response.data.bitrate,
+        track_response.data.duration,
+        track_response.data.direct_url,
+    )
     return track_response.data
 
 
@@ -261,6 +271,9 @@ async def get_song_detail(rid: str) -> KuwoTrackDetail:
         "action": "play",
         "ids": rid,
     }
+    logger.debug(
+        "Requesting kuwo track detail api: rid={}, url={}", rid, DETAIL_API_URL
+    )
     try:
         response = await client.get(DETAIL_API_URL, params=params)
         response.raise_for_status()
@@ -283,25 +296,35 @@ async def get_song_detail(rid: str) -> KuwoTrackDetail:
         )
     if detail_response.result.lower() != "ok" or not detail_response.songs:
         raise KuwoTrackResponseError("track detail response missing songs")
-    return detail_response.songs[0]
+    detail = detail_response.songs[0]
+    logger.debug(
+        "Kuwo track detail resolved: requested_rid={}, response_rid={}, "
+        "title={}, artist={}, album={}, cover_url={}",
+        rid,
+        detail.song_id,
+        detail.name,
+        detail.artist,
+        detail.album,
+        detail.cover_url,
+    )
+    return detail
 
 
 async def get_song_cover(rid: str) -> str | None:
-    client = await get_http_client()
-    params = {
-        "type": "rid_pic",
-        "pictype": "url",
-        "size": 700,
-        "rid": rid,
-    }
     try:
-        response = await client.get(COVER_API_URL, params=params)
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
+        detail = await get_song_detail(rid)
+    except KuwoTrackError as exc:
         logger.debug(
-            "Kuwo song cover request failed; omitting cover: rid={}, error={}", rid, exc
+            "Kuwo song detail cover unavailable; falling back to search cover: "
+            "rid={}, error={}",
+            rid,
+            exc,
         )
         return None
 
-    cover_url = response.text.strip().strip('"')
-    return cover_url or None
+    logger.debug(
+        "Kuwo song cover resolved: rid={}, source=track_detail, cover_url={}",
+        rid,
+        detail.cover_url,
+    )
+    return detail.cover_url

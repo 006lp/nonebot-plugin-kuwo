@@ -265,6 +265,52 @@ def test_resolve_font_sources_filters_missing_paths(tmp_path: Path) -> None:
     assert font_dirs == [str(tmp_path)]
 
 
+def test_resolve_font_sources_defaults_to_bundled_font() -> None:
+    render = import_render_module()
+    assert render.BUNDLED_FONT_PATH.is_file()
+    assert render.resolve_font_sources([], []) == ([str(render.BUNDLED_FONT_PATH)], [])
+
+
+def test_resolve_font_sources_uses_bundle_for_missing_custom_paths(
+    tmp_path: Path,
+) -> None:
+    render = import_render_module()
+    assert render.resolve_font_sources(
+        [str(tmp_path / "missing.ttf")], [str(tmp_path / "missing-dir")]
+    ) == ([str(render.BUNDLED_FONT_PATH)], [])
+
+
+def test_resolve_font_sources_accepts_custom_directory(tmp_path: Path) -> None:
+    render = import_render_module()
+    assert render.resolve_font_sources([], [str(tmp_path)]) == ([], [str(tmp_path)])
+
+
+@pytest.mark.parametrize("source", ["file", "directory"])
+def test_native_renderer_prioritizes_explicit_font_over_system_fonts(
+    source: str,
+) -> None:
+    render = import_render_module()
+    native = import_native_module()
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="60">'
+        '<text x="0" y="40" font-size="28" font-family="sans-serif">'
+        "夏日口袋 猛独が襲う MIKU</text></svg>"
+    )
+    kwargs = (
+        {"font_files": [str(render.BUNDLED_FONT_PATH)]}
+        if source == "file"
+        else {"font_dirs": [str(render.BUNDLED_FONT_PATH.parent)]}
+    )
+    explicit_svg = svg.replace(
+        'font-family="sans-serif"', 'font-family="LXGW WenKai Mono"'
+    )
+    generic = native.render_svg_to_png(svg, **kwargs)
+    assert generic == native.render_svg_to_png(explicit_svg, **kwargs)
+    assert generic != native.render_svg_to_png(
+        svg.replace("夏日口袋 猛独が襲う MIKU", ""), **kwargs
+    )
+
+
 @pytest.mark.asyncio
 async def test_fetch_cover_data_uri_returns_none_without_cover() -> None:
     render = import_render_module()
@@ -372,10 +418,30 @@ async def test_render_search_results_image_mode_returns_image(
     assert calls["cover_song_id"] == "553152678"
     assert calls["kwargs"] == {
         "scale": render.IMAGE_SCALE,
-        "font_files": [],
+        "font_files": [str(render.BUNDLED_FONT_PATH)],
         "font_dirs": [],
     }
     assert calls["thread"] != threading.main_thread().name
+
+
+@pytest.mark.asyncio
+async def test_search_image_uses_bundled_font_without_system_fonts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    render = import_render_module()
+    native = import_native_module()
+    config = import_config_module()
+    uniseg = import_uniseg_module()
+
+    def render_without_system_fonts(svg: str, **kwargs) -> bytes:
+        return native.render_svg_to_png(svg, load_system_fonts=False, **kwargs)
+
+    monkeypatch.setattr(render, "render_svg_to_png", render_without_system_fonts)
+    songs = [build_search_song(NAME="夏日口袋", ARTIST="初音ミク")]
+    message = await render.render_search_results(songs, config.ListRenderMode.IMAGE)
+    assert isinstance(message, uniseg.UniMessage)
+    assert isinstance(message[0], uniseg.Image)
+    assert png_size(message[0].raw_bytes)[0] == render.CANVAS_WIDTH * render.IMAGE_SCALE
 
 
 @pytest.mark.asyncio

@@ -244,7 +244,25 @@ async def handle_kw(arp: Arparma) -> None:
 
     try:
         song = songs[0]
+        logger.debug(
+            "Selected song for kw command: keyword={}, raw_rid={}, rid={}, "
+            "title={}, artist={}, album={}, search_cover_url={}",
+            keyword,
+            song.musicrid,
+            song.song_id,
+            song.name,
+            song.artist,
+            song.album,
+            song.album_cover_url,
+        )
         media = await get_song_media(song.song_id, get_quality_bitrate(quality))
+        if not media.cover_url:
+            media.cover_url = song.album_cover_url
+            logger.debug(
+                "Using search result cover for kw command: rid={}, cover_url={}",
+                song.song_id,
+                media.cover_url,
+            )
         message = await _build_track_message(
             render_mode=config.kuwo_track_render_mode,
             media=media,
@@ -282,6 +300,12 @@ async def handle_kwid(arp: Arparma) -> None:
         await kwid.finish("请输入正确的音乐 ID")
 
     config = get_runtime_config()
+    logger.debug(
+        "Received kwid command: raw_rid={}, rid={}, render_mode={}",
+        raw_rid,
+        rid,
+        config.kuwo_track_render_mode.value,
+    )
     try:
         quality = _resolve_command_quality(
             command_name="kwid",

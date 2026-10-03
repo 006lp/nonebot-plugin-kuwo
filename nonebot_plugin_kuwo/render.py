@@ -41,6 +41,7 @@ TEXT_BLOCK_GAP = 12
 IMAGE_SCALE = 2.0
 COVER_FETCH_TIMEOUT = 8.0
 MAX_COVER_BYTES = 5 * 1024 * 1024
+BUNDLED_FONT_PATH = Path(__file__).with_name("fonts") / "LXGWWenKaiMono-Regular.ttf"
 
 TITLE_MAX_UNITS = 44
 ARTIST_MAX_UNITS = 56
@@ -83,10 +84,7 @@ def _render_search_results_text(songs: Sequence[KuwoSearchSong]) -> str:
 def resolve_font_sources(
     extra_files: Sequence[str], extra_dirs: Sequence[str]
 ) -> tuple[list[str], list[str]]:
-    """Collect the extra font files/directories the native renderer should load.
-
-    System fonts are scanned by fontdb; these entries supplement minimal images.
-    """
+    """Use custom font sources when present, otherwise the bundled CJK font."""
 
     font_files: list[str] = []
     for raw_path in extra_files:
@@ -104,12 +102,17 @@ def resolve_font_sources(
             continue
         font_dirs.append(str(path))
 
-    if font_files or font_dirs:
-        logger.debug(
-            "Resolved extra render font sources: font_files={}, font_dirs={}",
-            font_files,
-            font_dirs,
-        )
+    if not font_files and not font_dirs:
+        if BUNDLED_FONT_PATH.is_file():
+            font_files.append(str(BUNDLED_FONT_PATH))
+        else:
+            logger.warning("Bundled render font is missing: {}", BUNDLED_FONT_PATH)
+
+    logger.debug(
+        "Resolved render font sources: font_files={}, font_dirs={}",
+        font_files,
+        font_dirs,
+    )
     return font_files, font_dirs
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "nonebot-plugin-kuwo"
-version = "0.3.0a1"
+version = "0.3.0a2"
 description = "NoneBot2 plugin for Kuwo music search and track delivery."
 readme = "README.md"
 authors = [{ name = "006lp", email = "lpsuki@outlook.com" }]
@@ -34,6 +34,7 @@ bindings = "pyo3"
 module-name = "nonebot_plugin_kuwo._qmc_rs"
 python-packages = ["nonebot_plugin_kuwo"]
 python-source = "."
+include = ["nonebot_plugin_kuwo/fonts/*"]
 strip = true
 
 [project.urls]
