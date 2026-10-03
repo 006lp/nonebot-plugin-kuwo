@@ -115,13 +115,18 @@ async def test_kwsearch_command_returns_image_results(
         assert limit == 5
         return [build_search_song(web_albumpic_short="120/s4s64/98/1370027605.jpg")]
 
-    async def fake_render_html(html: str, **kwargs) -> bytes:
-        render_calls["html"] = html
-        render_calls["template_path"] = kwargs["template_path"]
+    async def fake_covers(songs):
+        assert songs[0].album_cover_url.endswith("1370027605.jpg")
+        return [None]
+
+    def fake_render_svg(svg: str, scale: float) -> bytes:
+        assert scale == 2.0
+        render_calls["svg"] = svg
         return b"rendered-image"
 
     monkeypatch.setattr(plugin, "search_songs", fake_search)
-    monkeypatch.setattr(render_module, "render_html", fake_render_html)
+    monkeypatch.setattr(render_module, "_fetch_cover_data_uris", fake_covers)
+    monkeypatch.setattr(render_module, "render_svg_to_png", fake_render_svg)
     monkeypatch.setattr(plugin, "kwsearch", dummy_matcher)
     monkeypatch.setattr(
         plugin,
@@ -141,11 +146,9 @@ async def test_kwsearch_command_returns_image_results(
         [uniseg.Image(raw=b"rendered-image")]
     )
 
-    assert (
-        "http://img1.kwcdn.kuwo.cn/star/albumcover/120/s4s64/98/1370027605.jpg"
-        in render_calls["html"]
-    )
-    assert render_calls["template_path"].startswith("file://")
+    assert "Morning Dew Reflection.wav" in render_calls["svg"]
+    assert "rionos&amp;Kangseoha&amp;Kim Yoon" in render_calls["svg"]
+    assert "553152678" in render_calls["svg"]
 
 
 def test_kw_command_parses_quality_option_after_spaced_keyword() -> None:

@@ -88,7 +88,6 @@ plugins = ["nonebot_plugin_kuwo"]
 ```dotenv
 COMMAND_START=["/"]
 LOG_LEVEL=INFO
-RENDER_BACKEND=playwright
 
 KUWO_SEARCH_LIMIT=5
 KUWO_LIST_RENDER_MODE=text
@@ -111,7 +110,6 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 | `KUWO_TRACK_CACHE_RETENTION_DAYS` | `1` | 文件缓存保留天数，`0` 表示关闭按天清理 |
 | `KUWO_TRACK_CACHE_MAX_SIZE_MB` | `1024` | 文件缓存总大小上限，`0` 表示关闭按大小清理 |
 
-`RENDER_BACKEND` 是 `nonebot-plugin-htmlrender` 的配置项。使用 `KUWO_LIST_RENDER_MODE=image` 时需要设置为 `playwright`；未配置时图片渲染会失败并自动回退到文本列表。当前项目已按 `nonebot-plugin-htmlrender>=0.7.1` 验证：默认 `RENDER_STARTUP_MODE=off` 时不会在 NoneBot 启动阶段预热浏览器，首次图片渲染会按需启动，详情见 [nonebot-plugin-htmlrender 文档](https://github.com/kexue-z/nonebot-plugin-htmlrender)。
 
 音质枚举：
 
@@ -140,7 +138,7 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 - `text`
   - 每行格式：`序号. 音乐id 歌曲名-歌手`
 - `image`
-  - 使用 `nonebot-plugin-htmlrender` 生成图片列表
+  - 使用 SVG 模板和内置 Rust `resvg` 渲染器生成 PNG，无需安装浏览器；显示中文需要系统中有中文字体（例如 Noto Sans CJK）
   - 直接复用搜索接口返回的 `web_albumpic_short`
   - 渲染失败时自动回退到文本
 

@@ -9,7 +9,6 @@ requires-python = ">=3.10"
 dependencies = [
     "httpx>=0.28.1,<1.0.0",
     "nonebot-plugin-alconna>=0.62.0",
-    "nonebot-plugin-htmlrender>=0.7.1",
     "nonebot-plugin-localstore>=0.7.4",
     "nonebot2>=2.5.0,<3.0.0",
 ]
