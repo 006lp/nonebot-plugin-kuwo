@@ -11,11 +11,43 @@ require("nonebot_plugin_htmlrender")
 
 from nonebot_plugin_htmlrender import render_html
 
-from .config import ListRenderMode
+from .config import Config, ListRenderMode
 from .models import KuwoSearchSong
 from .utils import format_search_result_line
 
 _HTML_RENDER_BASE_URI = Path(__file__).resolve().as_uri()
+
+
+def resolve_font_sources(config: Config) -> tuple[list[str], list[str]]:
+    """Collect the extra font files/directories the native renderer should load.
+
+    Host fonts are always available through fontconfig; these entries are an
+    escape hatch for minimal images (Docker, slim VPS) that ship no CJK font.
+    """
+
+    font_files: list[str] = []
+    for raw_path in config.kuwo_render_font_files:
+        path = Path(raw_path).expanduser()
+        if not path.is_file():
+            logger.warning("Configured render font file does not exist: {}", path)
+            continue
+        font_files.append(str(path))
+
+    font_dirs: list[str] = []
+    for raw_path in config.kuwo_render_font_dirs:
+        path = Path(raw_path).expanduser()
+        if not path.is_dir():
+            logger.warning("Configured render font directory does not exist: {}", path)
+            continue
+        font_dirs.append(str(path))
+
+    if font_files or font_dirs:
+        logger.debug(
+            "Resolved extra render font sources: font_files={}, font_dirs={}",
+            font_files,
+            font_dirs,
+        )
+    return font_files, font_dirs
 
 
 def _render_search_results_text(songs: Sequence[KuwoSearchSong]) -> str:

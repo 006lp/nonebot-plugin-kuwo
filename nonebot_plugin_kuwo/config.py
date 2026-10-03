@@ -50,6 +50,24 @@ def _normalize_enum_input(value: Any) -> Any:
     return value
 
 
+def _normalize_path_list(value: Any) -> Any:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = value.split(",")
+    if not isinstance(value, (list, tuple, set)):
+        return value
+
+    normalized: list[str] = []
+    for item in value:
+        if item is None:
+            continue
+        text = str(item).strip()
+        if text:
+            normalized.append(text)
+    return normalized
+
+
 class Config(BaseModel):
     kuwo_search_limit: int = Field(default=5, ge=1, le=10)
     kuwo_list_render_mode: ListRenderMode = ListRenderMode.TEXT
@@ -58,6 +76,8 @@ class Config(BaseModel):
     kuwo_track_cache_retention_days: int = Field(default=1, ge=0)
     kuwo_track_cache_max_size_mb: int = Field(default=1024, ge=0)
     kuwo_track_proxy_url: str | None = None
+    kuwo_render_font_files: list[str] = Field(default_factory=list)
+    kuwo_render_font_dirs: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -109,6 +129,11 @@ class Config(BaseModel):
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("KUWO_TRACK_PROXY_URL must be an HTTP/HTTPS proxy URL")
         return proxy_url
+
+    @field_validator("kuwo_render_font_files", "kuwo_render_font_dirs", mode="before")
+    @classmethod
+    def normalize_render_font_sources(cls, value: object) -> object:
+        return _normalize_path_list(value)
 
 
 def get_runtime_config() -> Config:
