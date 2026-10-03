@@ -250,7 +250,7 @@ async def handle_kwsearch(arp: Arparma) -> None:
     if not songs:
         await kwsearch.finish("未找到相关歌曲")
 
-    message = await render_search_results(songs, config.kuwo_list_render_mode)
+    message = await render_search_results(songs, config.kuwo_list_render_mode, config)
     logger.debug(
         "kwsearch render completed: keyword={}, message_type={}, segment_count={}",
         keyword,
