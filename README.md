@@ -19,6 +19,19 @@
 
 基于 NoneBot2 的酷我音乐插件，面向 NapCat / OneBot V11 使用场景，提供搜索、直链、音乐卡片、语音和文件发送能力。
 
+> [!WARNING]
+> **Breaking Changes（自 0.3.0 起）**
+>
+> 由于上游 `nonebot-plugin-htmlrender` 0.8+ 引入了破坏性更新，本插件**自 `0.3.0` 起，搜索结果图片改用 SVG 模板 + 内置 Rust `resvg` 渲染**，移除对 `nonebot-plugin-htmlrender`、Playwright 和 Chromium 的依赖。
+>
+> `KUWO_LIST_RENDER_MODE=image` 的使用方式保持不变，无需再设置 `RENDER_BACKEND=playwright`。中文显示需要系统安装 CJK 字体，也可通过 `KUWO_RENDER_FONT_FILES` / `KUWO_RENDER_FONT_DIRS` 补充，详见[配置](#配置)。
+>
+> **如果仍希望使用 `nonebot-plugin-htmlrender` 渲染，请固定使用本插件 `0.2.7` 版本**。该版本的 htmlrender 依赖限定为 `>=0.7.1,<0.8`：
+>
+> ```bash
+> uv add "nonebot-plugin-kuwo==0.2.7"
+> ```
+
 ## 功能
 
 - `kwsearch <关键词>`

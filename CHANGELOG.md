@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - Unreleased
 
+- **Breaking Changes**：因上游 htmlrender 0.8 系列的破坏性更新，自 `0.3.0` 起更换搜索结果图片渲染逻辑，需要继续使用 htmlrender 的用户可固定到 `0.2.7`
 - 图片列表渲染从 `nonebot-plugin-htmlrender` 迁移到 Rust 原生扩展内置的 `resvg`，移除对 Playwright / Chromium 的运行时依赖
 - 原生扩展新增 `render_svg_to_png`，提供 SVG 字符串到 PNG 字节的渲染接口，并内置字体数据库缓存
 - 原生渲染器自动挑选可用的 CJK 字体作为默认字体族，修复无 Arial 环境下文本整段丢失的问题
