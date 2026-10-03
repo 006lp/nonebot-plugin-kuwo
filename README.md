@@ -26,7 +26,7 @@
 >
 > `KUWO_LIST_RENDER_MODE=image` 的使用方式保持不变，无需再设置 `RENDER_BACKEND=playwright`。中文显示需要系统安装 CJK 字体，也可通过 `KUWO_RENDER_FONT_FILES` / `KUWO_RENDER_FONT_DIRS` 补充，详见[配置](#配置)。
 >
-> **如果仍希望使用 `nonebot-plugin-htmlrender` 渲染，请固定使用本插件 `0.2.7` 版本**。该版本的 htmlrender 依赖限定为 `>=0.7.1,<0.8`：
+> **如果仍希望使用 `nonebot-plugin-htmlrender` 渲染，请固定使用本插件 `0.2.7` 版本**，对应源码见 [legacy/0.2.7 分支](https://github.com/006lp/nonebot-plugin-kuwo/tree/legacy/0.2.7)。该分支从 `v0.2.7` 标签创建，htmlrender 依赖限定为 `>=0.7.1,<0.8`：
 >
 > ```bash
 > uv add "nonebot-plugin-kuwo==0.2.7"
@@ -61,8 +61,6 @@ nb plugin install nonebot-plugin-kuwo --upgrade
 nb plugin install nonebot-plugin-kuwo --upgrade -i https://pypi.org/simple
 ```
 
-</details>
-
 <details>
 <summary>使用包管理器安装</summary>
 
@@ -72,10 +70,16 @@ nb plugin install nonebot-plugin-kuwo --upgrade -i https://pypi.org/simple
 uv add nonebot-plugin-kuwo
 ```
 
-安装 GitHub 仓库主分支：
+安装 GitHub 仓库主分支（当前为 `0.3.0a1` 预发布版本）：
 
 ```bash
 uv add git+https://github.com/006lp/nonebot-plugin-kuwo@main
+```
+
+安装保留 htmlrender 渲染的 [legacy/0.2.7 分支](https://github.com/006lp/nonebot-plugin-kuwo/tree/legacy/0.2.7)：
+
+```bash
+uv add git+https://github.com/006lp/nonebot-plugin-kuwo@legacy/0.2.7
 ```
 
 如果你使用其他包管理器，也可以选择：
@@ -91,6 +95,7 @@ poetry add nonebot-plugin-kuwo
 安装后，在 NoneBot2 项目的 `pyproject.toml` 中加入：
 
 ```toml
+[tool.nonebot]
 plugins = ["nonebot_plugin_kuwo"]
 ```
 
@@ -148,6 +153,7 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 - `card` 模式音质上限固定为 `lossless`
 - `KUWO_TRACK_CACHE_MAX_SIZE_MB` 小于 `600` 时仅记录警告，不阻止启动
 - `KUWO_TRACK_PROXY_URL` 只代理歌曲直链接口，不代理搜索、封面、详情和文件下载
+- 歌曲直链接口使用 `https://changenotice.kuwo.cn/mobi.s`，沿用 `rid` / `br` 等请求参数
 
 ## 使用
 
@@ -217,6 +223,10 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 - 缓存命中会刷新文件时间
 - 默认按 `1` 天和 `1024MB` 双重策略清理
 - 两个值都设为 `0` 时，不做自动清理
+- 单个歌曲文件下载上限为 `512 MiB`，超限会停止下载并清理临时文件
+- 下载和封面请求禁用 HTTP 内容压缩，压缩响应会被拒绝，避免解压后超出资源限额
+- 缓存路径必须位于插件缓存目录中，清理时跳过符号链接；下载取消或失败时清理 `.part` 文件
+- `.mflac` 解密在线程中执行；取消时先等待原生任务结束，再释放文件操作锁并清理临时文件
 
 `.mflac` 流程：
 
@@ -236,7 +246,7 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 
 项目强制使用 `uv`。
 
-当前版本 `0.2.7` 的本地验证环境为 Python `3.13.16` / Rust `1.99.0`，插件支持 Python `>=3.10`，原生扩展使用 `abi3-py310`。
+当前版本 `0.3.0a1` 的本地验证环境为 Python `3.13.16` / Rust `1.99.0`，插件支持 Python `>=3.10`，原生扩展使用 `abi3-py310`。Python 使用 PEP 440 版本 `0.3.0a1`，Cargo 使用等价的 SemVer 版本 `0.3.0-alpha1`。
 构建工具使用 `maturin>=1.15.0,<2.0`，Rust 绑定使用 `pyo3 0.29.3`；Release 工作流固定使用 maturin `1.15.0`。
 
 ```bash
@@ -274,6 +284,7 @@ nonebot_plugin_kuwo/
 ├── __init__.py
 ├── config.py
 ├── data_source.py
+├── files.py
 ├── models.py
 ├── qmc.py
 ├── render.py
@@ -283,6 +294,12 @@ src/
 └── render.rs
 tests/
 ```
+
+接口请求和 HTTP 客户端集中在 `data_source.py`，缓存、下载与解密集中在 `files.py`；QMC 回归测试通过 `tests/test_qmc.py` 调用原生扩展，Rust 实现文件不内嵌测试模块。
+
+命令注册、参数读取和流程编排保留在 `__init__.py`，通过 Alconna 的 `Arparma` 获取解析结果、通过 `UniMessage` 构建跨适配器消息。HTTP 客户端初始化和关闭函数直接注册到 NoneBot 的启动与关闭钩子，导入阶段不创建客户端。开发约定参考 [NoneBot 插件发布规范](https://nonebot.dev/docs/developer/plugin-publishing)和 [Alconna 响应器文档](https://nonebot.dev/docs/best-practice/alconna/matcher)。
+
+模型的数字字段由 Pydantic 统一校验，兼容整数与数字字符串；空值或畸形数据会转换为插件的接口响应异常。原生扩展按需加载，接口签名统一维护在 `_qmc_rs.pyi`。缓存与图片渲染共享取消等待逻辑，确保后台原生任务结束后才释放各自的操作锁；模块仅按这些明确职责划分。
 
 ## 鸣谢
 

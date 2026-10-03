@@ -575,6 +575,23 @@ async def test_render_serializes_native_work_and_keeps_slot_on_cancellation(
 
 
 @pytest.mark.asyncio
+async def test_cover_rejects_compressed_response_before_reading_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    render = import_render_module()
+    response = FakeStreamResponse(PNG_MAGIC + b"cover")
+    response.headers["content-encoding"] = "gzip"
+    patch_cover_client(monkeypatch, FakeStreamClient(response))
+    assert (
+        await render._fetch_cover_data_uri(
+            build_search_song(web_albumpic_short=COVER_PATH)
+        )
+        is None
+    )
+    assert response.body_read is False
+
+
+@pytest.mark.asyncio
 async def test_fetch_cover_follows_redirects(monkeypatch: pytest.MonkeyPatch) -> None:
     render = import_render_module()
     cover = make_cover_png(2, 2)

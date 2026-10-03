@@ -752,3 +752,97 @@ async def test_kwid_command_returns_file_segment(
             )
         ]
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command_name", ["kw", "kwid"])
+@pytest.mark.parametrize(
+    ("requested_quality", "expected_bitrate"),
+    [
+        ("standard", "128kmp3"),
+        ("exhigh", "320kmp3"),
+        ("lossless", "2000kflac"),
+        ("hires", "2000kflac"),
+        ("hifi", "2000kflac"),
+        ("sur", "2000kflac"),
+        ("jymaster", "2000kflac"),
+    ],
+)
+async def test_card_commands_apply_quality_cap(
+    monkeypatch: pytest.MonkeyPatch,
+    command_name: str,
+    requested_quality: str,
+    expected_bitrate: str,
+) -> None:
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    models = import_models_module()
+    dummy_matcher = DummyMatcher()
+    command = getattr(plugin, command_name).command()
+
+    async def fake_search(keyword: str, limit: int):
+        return [build_search_song()]
+
+    async def fake_get_media(rid: str, br: str):
+        assert br == expected_bitrate
+        return models.KuwoDetailedTrackResource(
+            rid=rid,
+            format="flac",
+            bitrate=2000,
+            duration=182,
+            direct_url="http://example.com/song.flac",
+        )
+
+    monkeypatch.setattr(plugin, "search_songs", fake_search)
+    monkeypatch.setattr(plugin, "get_song_media", fake_get_media)
+    monkeypatch.setattr(plugin, "get_song_detailed_media", fake_get_media)
+    monkeypatch.setattr(plugin, command_name, dummy_matcher)
+    monkeypatch.setattr(
+        plugin,
+        "get_runtime_config",
+        lambda: config_module.Config(kuwo_track_render_mode="card"),
+    )
+
+    argument = "Morning Dew Reflection" if command_name == "kw" else "553152678"
+    arp = command.parse(f"/{command_name} {argument} -q {requested_quality}")
+    assert arp.matched
+    with pytest.raises(MatcherFinished):
+        await getattr(plugin, f"handle_{command_name}")(arp)
+
+    assert dummy_matcher.message[0].audio == "http://example.com/song.flac"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command_name", ["kw", "kwid"])
+@pytest.mark.parametrize("render_mode", ["text", "file"])
+async def test_track_commands_preserve_failure_messages(
+    monkeypatch: pytest.MonkeyPatch, command_name: str, render_mode: str
+) -> None:
+    plugin = import_plugin_module()
+    config_module = import_config_module()
+    dummy_matcher = DummyMatcher()
+
+    async def fake_search(keyword: str, limit: int):
+        return [build_search_song()]
+
+    async def failing_get_media(rid: str, br: str):
+        raise plugin.KuwoTrackError("remote failure")
+
+    monkeypatch.setattr(plugin, "search_songs", fake_search)
+    monkeypatch.setattr(plugin, "get_song_media", failing_get_media)
+    monkeypatch.setattr(plugin, "get_song_detailed_media", failing_get_media)
+    monkeypatch.setattr(plugin, command_name, dummy_matcher)
+    monkeypatch.setattr(
+        plugin,
+        "get_runtime_config",
+        lambda: config_module.Config(kuwo_track_render_mode=render_mode),
+    )
+
+    arp = make_arp(keyword=("Morning",), rid="553152678")
+    with pytest.raises(MatcherFinished):
+        await getattr(plugin, f"handle_{command_name}")(arp)
+
+    expected = "获取播放链接失败" if command_name == "kw" else "获取歌曲信息失败"
+    if render_mode == "file":
+        expected = "下载歌曲文件失败"
+    assert dummy_matcher.message == expected

@@ -633,7 +633,7 @@ wheels = [
 
 [[package]]
 name = "nonebot-plugin-kuwo"
-version = "0.2.7"
+version = "0.3.0a1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

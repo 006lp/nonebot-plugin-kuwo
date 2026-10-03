@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import re
-from collections.abc import Sequence
+from collections.abc import Coroutine, Sequence
 from pathlib import Path
+from typing import Any, TypeVar
 
 from nonebot_plugin_alconna.builtins.uniseg.music_share import (
     MusicShare,
@@ -15,6 +17,25 @@ from .config import KuwoQuality, TrackRenderMode
 _MUSICRID_RE = re.compile(r"(?:MUSIC_)?(?P<song_id>\d+)$")
 _AUDIO_SUFFIX_RE = re.compile(r"\.(?:aac|flac|mflac|mgg|mp3|ogg|wav)$", re.IGNORECASE)
 _INVALID_FILENAME_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_Result = TypeVar("_Result")
+
+
+async def wait_for_completion(coroutine: Coroutine[Any, Any, _Result]) -> _Result:
+    """Keep the caller's resource lock until uncancellable work has finished."""
+    task = asyncio.create_task(coroutine)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except Exception:  # noqa: BLE001
+                break
+        if not task.cancelled():
+            task.exception()
+        raise
 
 
 def normalize_musicrid(value: str) -> str:
@@ -115,7 +136,7 @@ def build_track_message(
     duration: int,
     direct_url: str,
     ekey: str | None = None,
-    local_file_path: str | None = None,
+    local_file_path: str | Path | None = None,
     cover_url: str | None = None,
     title: str | None = None,
     artist: str | None = None,

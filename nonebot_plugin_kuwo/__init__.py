@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from pathlib import Path
 
 from arclet.alconna import Alconna, Args, Arparma, MultiVar, Option
 from nonebot import get_driver, logger, require
@@ -25,13 +25,13 @@ from .data_source import (
     KuwoTrackError,
     KuwoUnsupportedFormatError,
     close_http_client,
-    download_track_file,
     get_song_detailed_media,
     get_song_media,
     initialize_http_client,
     search_songs,
 )
-from .models import KuwoDetailedTrackResource, KuwoSearchSong, KuwoTrackResource
+from .files import download_track_file
+from .models import KuwoTrackResource
 from .render import render_search_results
 from .utils import build_track_message, join_keyword_parts, normalize_musicrid
 
@@ -46,16 +46,8 @@ __plugin_meta__ = PluginMetadata(
 )
 
 driver = get_driver()
-
-
-@driver.on_startup
-async def _startup() -> None:
-    await initialize_http_client()
-
-
-@driver.on_shutdown
-async def _shutdown() -> None:
-    await close_http_client()
+driver.on_startup(initialize_http_client)
+driver.on_shutdown(close_http_client)
 
 
 kwsearch = on_alconna(
@@ -83,24 +75,6 @@ kwid = on_alconna(
     block=True,
 )
 
-_QUALITY_ORDER = {
-    KuwoQuality.STANDARD: 0,
-    KuwoQuality.EXHIGH: 1,
-    KuwoQuality.LOSSLESS: 2,
-    KuwoQuality.HIRES: 3,
-    KuwoQuality.HIFI: 4,
-    KuwoQuality.SUR: 5,
-    KuwoQuality.JYMASTER: 6,
-}
-
-
-def _extract_keyword(parts: Sequence[str] | None) -> str:
-    return join_keyword_parts(parts or ())
-
-
-async def _search_song_candidates(keyword: str, limit: int) -> list[KuwoSearchSong]:
-    return await search_songs(keyword, limit)
-
 
 def _resolve_command_quality(
     *,
@@ -124,10 +98,11 @@ def _resolve_command_quality(
         )
         return KuwoQuality.STANDARD
 
-    if (
-        render_mode is TrackRenderMode.CARD
-        and _QUALITY_ORDER[quality] > _QUALITY_ORDER[KuwoQuality.LOSSLESS]
-    ):
+    if render_mode is TrackRenderMode.CARD and quality not in {
+        KuwoQuality.STANDARD,
+        KuwoQuality.EXHIGH,
+        KuwoQuality.LOSSLESS,
+    }:
         logger.info(
             (
                 "Card mode caps quality to lossless: command={}, "
@@ -149,50 +124,28 @@ def _resolve_command_quality(
     return quality
 
 
-async def _fetch_track_message(
-    *,
-    rid: str,
-    render_mode: TrackRenderMode,
-    quality: KuwoQuality,
-    song: KuwoSearchSong | None = None,
-) -> str | UniMessage:
-    media = await get_song_media(rid, get_quality_bitrate(quality))
-    return await _build_track_message(
-        render_mode=render_mode,
-        media=media,
-        rid=rid,
-        quality=quality,
-        title=song.name if song else None,
-        artist=song.artist if song else None,
-        album=song.album if song else None,
-    )
-
-
 async def _build_track_message(
     *,
     render_mode: TrackRenderMode,
-    media: KuwoTrackResource | KuwoDetailedTrackResource,
-    rid: str,
+    media: KuwoTrackResource,
     quality: KuwoQuality,
     title: str | None = None,
     artist: str | None = None,
     album: str | None = None,
 ) -> str | UniMessage:
-    local_file_path: str | None = None
+    local_file_path: Path | None = None
     if render_mode is TrackRenderMode.FILE:
-        local_file_path = str(
-            await download_track_file(
-                rid=rid,
-                direct_url=media.direct_url,
-                format_name=media.format,
-                bitrate=media.bitrate,
-                ekey=media.ekey,
-            )
+        local_file_path = await download_track_file(
+            rid=media.rid,
+            direct_url=media.direct_url,
+            format_name=media.format,
+            bitrate=media.bitrate,
+            ekey=media.ekey,
         )
 
     return build_track_message(
         render_mode=render_mode,
-        rid=rid,
+        rid=media.rid,
         quality=quality,
         bitrate=media.bitrate,
         duration=media.duration,
@@ -206,20 +159,10 @@ async def _build_track_message(
     )
 
 
-def _resolve_track_failure_message(
-    render_mode: TrackRenderMode,
-    *,
-    default_message: str,
-) -> str:
-    if render_mode is TrackRenderMode.FILE:
-        return "下载歌曲文件失败"
-    return default_message
-
-
 @kwsearch.handle()
 async def handle_kwsearch(arp: Arparma) -> None:
     config = get_runtime_config()
-    keyword = _extract_keyword(arp.all_matched_args.get("keyword"))
+    keyword = join_keyword_parts(arp.all_matched_args.get("keyword") or ())
     if not keyword:
         await kwsearch.finish("请输入搜索关键词")
 
@@ -231,7 +174,7 @@ async def handle_kwsearch(arp: Arparma) -> None:
     )
 
     try:
-        songs = await _search_song_candidates(keyword, config.kuwo_search_limit)
+        songs = await search_songs(keyword, config.kuwo_search_limit)
     except KuwoSearchNetworkError as exc:
         logger.opt(exception=exc).warning(
             "Kuwo search request failed: keyword={}", keyword
@@ -268,12 +211,12 @@ async def handle_kwsearch(arp: Arparma) -> None:
 @kw.handle()
 async def handle_kw(arp: Arparma) -> None:
     config = get_runtime_config()
-    keyword = _extract_keyword(arp.all_matched_args.get("keyword"))
+    keyword = join_keyword_parts(arp.all_matched_args.get("keyword") or ())
     if not keyword:
         await kw.finish("请输入搜索关键词")
 
     try:
-        songs = await _search_song_candidates(keyword, 1)
+        songs = await search_songs(keyword, 1)
     except KuwoSearchNetworkError as exc:
         logger.opt(exception=exc).warning(
             "Kuwo search request failed: keyword={}", keyword
@@ -300,11 +243,15 @@ async def handle_kw(arp: Arparma) -> None:
         await kw.finish("请输入正确的音质参数")
 
     try:
-        message = await _fetch_track_message(
-            rid=songs[0].song_id,
+        song = songs[0]
+        media = await get_song_media(song.song_id, get_quality_bitrate(quality))
+        message = await _build_track_message(
             render_mode=config.kuwo_track_render_mode,
+            media=media,
             quality=quality,
-            song=songs[0],
+            title=song.name,
+            artist=song.artist,
+            album=song.album,
         )
     except KuwoUnsupportedFormatError:
         await kw.finish("当前暂不支持该歌曲的文件发送")
@@ -315,10 +262,9 @@ async def handle_kw(arp: Arparma) -> None:
             quality.value,
         )
         await kw.finish(
-            _resolve_track_failure_message(
-                config.kuwo_track_render_mode,
-                default_message="获取播放链接失败",
-            )
+            "下载歌曲文件失败"
+            if config.kuwo_track_render_mode is TrackRenderMode.FILE
+            else "获取播放链接失败"
         )
 
     await kw.finish(message)
@@ -351,7 +297,6 @@ async def handle_kwid(arp: Arparma) -> None:
         message = await _build_track_message(
             render_mode=config.kuwo_track_render_mode,
             media=media,
-            rid=rid,
             quality=quality,
             title=media.title,
             artist=media.artist,
@@ -366,10 +311,9 @@ async def handle_kwid(arp: Arparma) -> None:
             quality.value,
         )
         await kwid.finish(
-            _resolve_track_failure_message(
-                config.kuwo_track_render_mode,
-                default_message="获取歌曲信息失败",
-            )
+            "下载歌曲文件失败"
+            if config.kuwo_track_render_mode is TrackRenderMode.FILE
+            else "获取歌曲信息失败"
         )
 
     await kwid.finish(message)

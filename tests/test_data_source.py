@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import importlib
-import os
 import re
-import time
-from pathlib import Path
-from uuid import uuid4
+from copy import deepcopy
 
 import httpx
 import pytest
@@ -64,29 +61,6 @@ DETAIL_RESPONSE = {
 }
 
 
-def make_workspace_tmp_path(name: str) -> Path:
-    tmp_path = (Path("tests") / ".tmp" / f"{name}_{uuid4().hex}").resolve()
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    return tmp_path
-
-
-def make_runtime_config(
-    *,
-    retention_days: int = 1,
-    max_size_mb: int = 1024,
-):
-    config_module = import_config_module()
-    return config_module.Config(
-        kuwo_track_cache_retention_days=retention_days,
-        kuwo_track_cache_max_size_mb=max_size_mb,
-    )
-
-
-def fake_replace_path(source: Path, target: Path) -> Path:
-    target.write_bytes(source.read_bytes())
-    return target
-
-
 @pytest.mark.asyncio
 @respx.mock
 async def test_search_songs_success() -> None:
@@ -138,10 +112,18 @@ async def test_search_songs_raises_on_invalid_payload() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_song_media_returns_direct_url_and_cover() -> None:
+@pytest.mark.parametrize("numeric_strings", [False, True])
+async def test_get_song_media_returns_direct_url_and_cover(
+    numeric_strings: bool,
+) -> None:
     data_source = import_data_source_module()
+    payload = deepcopy(TRACK_RESPONSE)
+    if numeric_strings:
+        payload["code"] = str(payload["code"])
+        for field in ("bitrate", "duration", "rid"):
+            payload["data"][field] = str(payload["data"][field])
     track_route = respx.get(data_source.TRACK_API_URL).mock(
-        return_value=httpx.Response(200, json=TRACK_RESPONSE)
+        return_value=httpx.Response(200, json=payload)
     )
     respx.get(data_source.COVER_API_URL).mock(
         return_value=httpx.Response(200, text="http://example.com/cover.jpg")
@@ -149,7 +131,7 @@ async def test_get_song_media_returns_direct_url_and_cover() -> None:
 
     media = await data_source.get_song_media("11713652", "2000kflac")
 
-    assert data_source.TRACK_API_URL == "https://nmsublist.kuwo.cn/mobi.s"
+    assert data_source.TRACK_API_URL == "https://changenotice.kuwo.cn/mobi.s"
     assert track_route.called
     request = track_route.calls.last.request
     assert "x-forwarded-for" not in request.headers
@@ -172,7 +154,7 @@ async def test_get_song_link_uses_configured_proxy_client(
     data_source = import_data_source_module()
     config_module = import_config_module()
     proxy_url = "http://user:pass@127.0.0.1:7890"
-    captured_proxy_urls: list[str | None] = []
+    captured_proxy_urls: list[str] = []
     captured_requests: list[tuple[str, dict[str, str]]] = []
 
     class FakeClient:
@@ -181,8 +163,8 @@ async def test_get_song_link_uses_configured_proxy_client(
             request = httpx.Request("GET", url, params=params)
             return httpx.Response(200, json=TRACK_RESPONSE, request=request)
 
-    async def fake_get_track_link_http_client(
-        configured_proxy_url: str | None,
+    async def fake_get_track_proxy_http_client(
+        configured_proxy_url: str,
     ) -> FakeClient:
         captured_proxy_urls.append(configured_proxy_url)
         return FakeClient()
@@ -194,8 +176,8 @@ async def test_get_song_link_uses_configured_proxy_client(
     )
     monkeypatch.setattr(
         data_source,
-        "get_track_link_http_client",
-        fake_get_track_link_http_client,
+        "get_track_proxy_http_client",
+        fake_get_track_proxy_http_client,
     )
 
     track = await data_source.get_song_link("11713652", "2000kflac")
@@ -223,13 +205,20 @@ def test_redact_proxy_url_hides_credentials() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_get_song_detailed_media_returns_track_detail() -> None:
+@pytest.mark.parametrize("numeric_strings", [False, True])
+async def test_get_song_detailed_media_returns_track_detail(
+    numeric_strings: bool,
+) -> None:
     data_source = import_data_source_module()
+    payload = deepcopy(DETAIL_RESPONSE)
+    if numeric_strings:
+        payload["errorcode"] = str(payload["errorcode"])
+        payload["songs"][0]["id"] = str(payload["songs"][0]["id"])
     respx.get(data_source.TRACK_API_URL).mock(
         return_value=httpx.Response(200, json=TRACK_RESPONSE)
     )
     respx.get(data_source.DETAIL_API_URL).mock(
-        return_value=httpx.Response(200, json=DETAIL_RESPONSE)
+        return_value=httpx.Response(200, json=payload)
     )
 
     media = await data_source.get_song_detailed_media("320490745", "2000kflac")
@@ -247,17 +236,6 @@ async def test_get_song_detailed_media_returns_track_detail() -> None:
     await data_source.close_http_client()
 
 
-def test_resolve_track_file_extension_prefers_url_suffix() -> None:
-    data_source = import_data_source_module()
-    assert (
-        data_source.resolve_track_file_extension(
-            "http://example.com/track/F000003qKlqV1PVMB8.flac",
-            "mflac",
-        )
-        == "flac"
-    )
-
-
 def test_generate_track_user_returns_lowercase_alphanumeric_string() -> None:
     data_source = import_data_source_module()
     value = data_source.generate_track_user()
@@ -267,251 +245,89 @@ def test_generate_track_user_returns_lowercase_alphanumeric_string() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_download_track_file_success(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("kind", ["network", "json", "schema", "code"])
+async def test_get_song_link_reports_remote_failures(kind: str) -> None:
     data_source = import_data_source_module()
-    tmp_path = make_workspace_tmp_path("download_track_file_success")
-    monkeypatch.setattr(data_source, "_track_file_cache_dir", tmp_path)
-    monkeypatch.setattr(
-        data_source,
-        "get_runtime_config",
-        lambda: make_runtime_config(),
-    )
-    monkeypatch.setattr(data_source, "_remove_path", lambda path: None)
-    monkeypatch.setattr(data_source, "_replace_path", fake_replace_path)
-    route = respx.get("http://example.com/song.flac").mock(
-        return_value=httpx.Response(200, content=b"flac-bytes")
-    )
-
-    file_path = await data_source.download_track_file(
-        "553152678",
-        "http://example.com/song.flac",
-        "flac",
-        2000,
-    )
-
-    assert route.called
-    assert (
-        route.calls.last.request.headers["user-agent"]
-        == data_source.TRACK_FILE_DOWNLOAD_HEADERS["User-Agent"]
-    )
-    assert file_path == (tmp_path / "553152678_2000.flac").resolve()
-    assert file_path.read_bytes() == b"flac-bytes"
-
-    await data_source.close_http_client()
-
-
-@pytest.mark.asyncio
-async def test_download_track_file_decrypts_mflac_to_flac(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    data_source = import_data_source_module()
-    tmp_path = make_workspace_tmp_path("download_track_file_decrypts_mflac")
-    removed_paths: list[Path] = []
-    monkeypatch.setattr(data_source, "_track_file_cache_dir", tmp_path)
-    monkeypatch.setattr(
-        data_source,
-        "get_runtime_config",
-        lambda: make_runtime_config(),
-    )
-    monkeypatch.setattr(
-        data_source, "_remove_path", lambda path: removed_paths.append(path)
-    )
-    monkeypatch.setattr(data_source, "_replace_path", fake_replace_path)
-
-    async def fake_download_file_to_path(direct_url: str, file_path: Path) -> Path:
-        assert direct_url == "http://example.com/song.mflac"
-        file_path.write_bytes(b"encrypted-mflac")
-        return file_path
-
-    def fake_decrypt_mflac_file(
-        source_path: Path,
-        target_path: Path,
-        ekey: str,
-        chunk_size: int = 65536,
-    ) -> Path:
-        assert source_path == (tmp_path / "553152678_20201.mflac").resolve()
-        assert target_path == (tmp_path / "553152678_20201.flac.part").resolve()
-        assert ekey == "test-ekey"
-        assert chunk_size == 65536
-        target_path.write_bytes(b"fLaCdecoded")
-        return target_path
-
-    monkeypatch.setattr(
-        data_source, "_download_file_to_path", fake_download_file_to_path
-    )
-    monkeypatch.setattr(data_source, "decrypt_mflac_file", fake_decrypt_mflac_file)
-
-    file_path = await data_source.download_track_file(
-        "553152678",
-        "http://example.com/song.mflac",
-        "mflac",
-        20201,
-        ekey="test-ekey",
-    )
-
-    assert file_path == (tmp_path / "553152678_20201.flac").resolve()
-    assert file_path.read_bytes() == b"fLaCdecoded"
-    assert (tmp_path / "553152678_20201.mflac").resolve() in removed_paths
-
-
-@pytest.mark.asyncio
-async def test_download_track_file_raises_when_mflac_ekey_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    data_source = import_data_source_module()
-    tmp_path = make_workspace_tmp_path("download_track_file_missing_mflac_ekey")
-    monkeypatch.setattr(data_source, "_track_file_cache_dir", tmp_path)
-    monkeypatch.setattr(
-        data_source,
-        "get_runtime_config",
-        lambda: make_runtime_config(),
-    )
-
-    with pytest.raises(data_source.KuwoTrackResponseError, match="ekey is missing"):
-        await data_source.download_track_file(
-            "553152678",
-            "http://example.com/song.mflac",
-            "mflac",
-            20201,
+    route = respx.get(data_source.TRACK_API_URL)
+    expected = data_source.KuwoTrackResponseError
+    if kind == "network":
+        route.mock(side_effect=httpx.ConnectError("unavailable"))
+        expected = data_source.KuwoTrackNetworkError
+    elif kind == "json":
+        route.mock(return_value=httpx.Response(200, text="not json"))
+    elif kind == "schema":
+        route.mock(return_value=httpx.Response(200, json={"code": 200}))
+    else:
+        route.mock(
+            return_value=httpx.Response(200, json={**TRACK_RESPONSE, "code": 403})
         )
+    try:
+        with pytest.raises(expected):
+            await data_source.get_song_link("11713652", "2000kflac")
+    finally:
+        await data_source.close_http_client()
 
 
 @pytest.mark.asyncio
-async def test_download_track_file_deletes_expired_cache_entries(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@respx.mock
+async def test_search_rejects_invalid_rid_at_response_boundary() -> None:
     data_source = import_data_source_module()
-    tmp_path = make_workspace_tmp_path(
-        "download_track_file_deletes_expired_cache_entries"
+    payload = {
+        **SEARCH_RESPONSE,
+        "abslist": [{**SEARCH_RESPONSE["abslist"][0], "MUSICRID": "../../outside"}],
+    }
+    respx.get(data_source.SEARCH_API_URL).mock(
+        return_value=httpx.Response(200, json=payload)
     )
-    deleted_paths: list[Path] = []
-    expired_path = (tmp_path / "old_2000.flac").resolve()
-    expired_path.write_bytes(b"expired")
-    expired_at = time.time() - (2 * 24 * 60 * 60)
-    os.utime(expired_path, (expired_at, expired_at))
-
-    monkeypatch.setattr(data_source, "_track_file_cache_dir", tmp_path)
-    monkeypatch.setattr(
-        data_source,
-        "get_runtime_config",
-        lambda: make_runtime_config(retention_days=1, max_size_mb=0),
-    )
-    monkeypatch.setattr(
-        data_source,
-        "_delete_track_cache_path",
-        lambda path, reason: deleted_paths.append(path.resolve()),
-    )
-
-    async def fake_download_file_to_path(direct_url: str, file_path: Path) -> Path:
-        file_path.write_bytes(b"fresh")
-        return file_path
-
-    monkeypatch.setattr(
-        data_source, "_download_file_to_path", fake_download_file_to_path
-    )
-
-    file_path = await data_source.download_track_file(
-        "553152678",
-        "http://example.com/song.flac",
-        "flac",
-        2000,
-    )
-
-    assert file_path.exists()
-    assert expired_path in deleted_paths
+    try:
+        with pytest.raises(data_source.KuwoSearchResponseError):
+            await data_source.search_songs("test", 5)
+    finally:
+        await data_source.close_http_client()
 
 
 @pytest.mark.asyncio
-async def test_download_track_file_prunes_cache_by_size_after_download(
-    monkeypatch: pytest.MonkeyPatch,
+@respx.mock
+@pytest.mark.parametrize(
+    ("endpoint", "field_path"),
+    [
+        ("search", ("TOTAL",)),
+        ("search", ("abslist", 0, "DURATION")),
+        ("link", ("code",)),
+        ("link", ("data", "bitrate")),
+        ("link", ("data", "duration")),
+        ("link", ("data", "rid")),
+        ("detail", ("errorcode",)),
+        ("detail", ("songs", 0, "id")),
+    ],
+)
+async def test_null_numeric_fields_report_response_errors(
+    endpoint: str, field_path: tuple[str | int, ...]
 ) -> None:
     data_source = import_data_source_module()
-    tmp_path = make_workspace_tmp_path(
-        "download_track_file_prunes_cache_by_size_after_download"
-    )
-    deleted_paths: list[Path] = []
-    oldest_path = (tmp_path / "oldest_2000.flac").resolve()
-    older_path = (tmp_path / "older_2000.flac").resolve()
-    oldest_path.write_bytes(b"a" * (500 * 1024))
-    older_path.write_bytes(b"b" * (400 * 1024))
+    if endpoint == "search":
+        payload = deepcopy(SEARCH_RESPONSE)
+        url = data_source.SEARCH_API_URL
+        request = data_source.search_songs("test", 5)
+        expected = data_source.KuwoSearchResponseError
+    elif endpoint == "link":
+        payload = deepcopy(TRACK_RESPONSE)
+        url = data_source.TRACK_API_URL
+        request = data_source.get_song_link("11713652", "2000kflac")
+        expected = data_source.KuwoTrackResponseError
+    else:
+        payload = deepcopy(DETAIL_RESPONSE)
+        url = data_source.DETAIL_API_URL
+        request = data_source.get_song_detail("320490745")
+        expected = data_source.KuwoTrackResponseError
 
-    now = time.time()
-    os.utime(oldest_path, (now - 200, now - 200))
-    os.utime(older_path, (now - 100, now - 100))
-
-    monkeypatch.setattr(data_source, "_track_file_cache_dir", tmp_path)
-    monkeypatch.setattr(
-        data_source,
-        "get_runtime_config",
-        lambda: make_runtime_config(retention_days=0, max_size_mb=1),
-    )
-    monkeypatch.setattr(
-        data_source,
-        "_delete_track_cache_path",
-        lambda path, reason: deleted_paths.append(path.resolve()),
-    )
-
-    async def fake_download_file_to_path(direct_url: str, file_path: Path) -> Path:
-        file_path.write_bytes(b"c" * (300 * 1024))
-        return file_path
-
-    monkeypatch.setattr(
-        data_source, "_download_file_to_path", fake_download_file_to_path
-    )
-
-    file_path = await data_source.download_track_file(
-        "553152678",
-        "http://example.com/song.flac",
-        "flac",
-        2000,
-    )
-
-    assert file_path.exists()
-    assert oldest_path in deleted_paths
-    assert older_path not in deleted_paths
-
-
-@pytest.mark.asyncio
-async def test_download_track_file_skips_cache_cleanup_when_disabled(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    data_source = import_data_source_module()
-    tmp_path = make_workspace_tmp_path(
-        "download_track_file_skips_cache_cleanup_when_disabled"
-    )
-    deleted_paths: list[Path] = []
-    old_path = (tmp_path / "old_2000.flac").resolve()
-    old_path.write_bytes(b"a" * (700 * 1024))
-    old_at = time.time() - (3 * 24 * 60 * 60)
-    os.utime(old_path, (old_at, old_at))
-
-    monkeypatch.setattr(data_source, "_track_file_cache_dir", tmp_path)
-    monkeypatch.setattr(
-        data_source,
-        "get_runtime_config",
-        lambda: make_runtime_config(retention_days=0, max_size_mb=0),
-    )
-    monkeypatch.setattr(
-        data_source,
-        "_delete_track_cache_path",
-        lambda path, reason: deleted_paths.append(path.resolve()),
-    )
-
-    async def fake_download_file_to_path(direct_url: str, file_path: Path) -> Path:
-        file_path.write_bytes(b"fresh")
-        return file_path
-
-    monkeypatch.setattr(
-        data_source, "_download_file_to_path", fake_download_file_to_path
-    )
-
-    file_path = await data_source.download_track_file(
-        "553152678",
-        "http://example.com/song.flac",
-        "flac",
-        2000,
-    )
-
-    assert file_path.exists()
-    assert old_path.exists()
-    assert not deleted_paths
+    parent = payload
+    for key in field_path[:-1]:
+        parent = parent[key]
+    parent[field_path[-1]] = None
+    respx.get(url).mock(return_value=httpx.Response(200, json=payload))
+    try:
+        with pytest.raises(expected, match="schema mismatch"):
+            await request
+    finally:
+        await data_source.close_http_client()

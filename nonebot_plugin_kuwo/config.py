@@ -88,29 +88,18 @@ class Config(BaseModel):
         data = dict(value)
         track_mode = _normalize_enum_input(data.get("kuwo_track_render_mode"))
 
-        if track_mode in {TrackRenderMode.CARD, TrackRenderMode.CARD.value} and (
-            "kuwo_list_render_mode" not in data
-        ):
+        if track_mode == TrackRenderMode.CARD and ("kuwo_list_render_mode" not in data):
             data["kuwo_list_render_mode"] = ListRenderMode.IMAGE.value
         return data
 
-    @field_validator("kuwo_list_render_mode", mode="before")
+    @field_validator(
+        "kuwo_list_render_mode",
+        "kuwo_track_render_mode",
+        "kuwo_default_quality",
+        mode="before",
+    )
     @classmethod
-    def normalize_list_render_mode(
-        cls, value: ListRenderMode | str
-    ) -> ListRenderMode | str:
-        return _normalize_enum_input(value)
-
-    @field_validator("kuwo_track_render_mode", mode="before")
-    @classmethod
-    def normalize_track_render_mode(
-        cls, value: TrackRenderMode | str
-    ) -> TrackRenderMode | str:
-        return _normalize_enum_input(value)
-
-    @field_validator("kuwo_default_quality", mode="before")
-    @classmethod
-    def normalize_default_quality(cls, value: KuwoQuality | str) -> KuwoQuality | str:
+    def normalize_enum_fields(cls, value: Any) -> Any:
         return _normalize_enum_input(value)
 
     @field_validator("kuwo_track_proxy_url", mode="before")

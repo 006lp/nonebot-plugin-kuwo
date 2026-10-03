@@ -16,7 +16,7 @@ from ._native import render_svg_to_png
 from .config import ListRenderMode
 from .data_source import get_http_client
 from .models import KuwoSearchSong
-from .utils import format_search_result_line
+from .utils import format_search_result_line, wait_for_completion
 
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 XLINK_NAMESPACE = "http://www.w3.org/1999/xlink"
@@ -172,10 +172,19 @@ async def _fetch_cover_data_uri(song: KuwoSearchSong) -> str | None:
         async with client.stream(
             "GET",
             cover_url,
+            headers={"Accept-Encoding": "identity"},
             timeout=COVER_FETCH_TIMEOUT,
             follow_redirects=True,
         ) as response:
             response.raise_for_status()
+
+            if response.headers.get(
+                "content-encoding", "identity"
+            ).strip().lower() not in {"", "identity"}:
+                logger.warning(
+                    "Compressed cover response rejected: song_id={}", song.song_id
+                )
+                return None
 
             content_type = (
                 response.headers.get("content-type", "")
@@ -436,16 +445,9 @@ async def render_search_results(
         try:
             # Bound cover buffers and native work across simultaneous commands.
             async with _image_render_lock:
-                task = asyncio.create_task(
+                return await wait_for_completion(
                     _render_search_results_image(songs, font_files, font_dirs)
                 )
-                try:
-                    return await asyncio.shield(task)
-                except asyncio.CancelledError:
-                    # Cancelling to_thread cannot stop native rendering. Keep
-                    # the slot occupied until its buffers have been released.
-                    await asyncio.gather(task, return_exceptions=True)
-                    raise
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=exc).warning(
                 "Search result image rendering failed; fallback to text mode"

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import base64
+import struct
 from pathlib import Path
 from uuid import uuid4
+
+import pytest
 
 SAMPLE_MFLAC_PATH = Path(
     "tests/AIM0000WoYYr0hishZ3b6ff42855ecade7711348a59f29bca0.mflac"
@@ -80,3 +84,20 @@ def test_decrypt_mflac_file_can_decrypt_real_sample_header() -> None:
 
     assert output_path == decrypted_head_path
     assert decrypted_head_path.read_bytes().startswith(b"fLaC")
+
+
+def test_decrypt_qmc_bytes_rejects_overflowing_offset() -> None:
+    qmc_module = import_qmc_module()
+    raw_key = qmc_module.extract_qmc_raw_key_from_ekey(KUWO_SAMPLE_EKEY)
+    with pytest.raises(ValueError, match="offset"):
+        qmc_module.decrypt_qmc_bytes(
+            b"12", raw_key, (1 << (struct.calcsize("P") * 8)) - 1
+        )
+
+
+def test_malformed_tea_keys_raise_value_error_instead_of_native_panic() -> None:
+    qmc_module = import_qmc_module()
+    for value in range(256):
+        raw_key = base64.b64encode(bytes([value]) * 24)
+        with pytest.raises(ValueError):
+            qmc_module.derive_qmc_key(raw_key)

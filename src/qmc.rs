@@ -200,7 +200,7 @@ fn kuwo_crypto(message: &[u8], mode: u8, key: &[u8; 8]) -> Result<Vec<u8>, QmcEr
             }
         }
         1 => {
-            if input.len() % 8 != 0 {
+            if !input.len().is_multiple_of(8) {
                 return Err(QmcError::Value(
                     "Invalid message length: msg must be a multiple of 8 in decrypt mode."
                         .to_string(),
@@ -221,7 +221,7 @@ fn kuwo_crypto(message: &[u8], mode: u8, key: &[u8; 8]) -> Result<Vec<u8>, QmcEr
     let schedule = sub_keys(key_block, mode);
 
     let mut result = Vec::with_capacity(input.len());
-    for chunk in input.chunks_exact(8) {
+    for chunk in input.as_chunks::<8>().0 {
         let mut block = 0u64;
         for (index, item) in chunk.iter().enumerate() {
             block |= (*item as u64) << (index * 8);
@@ -251,7 +251,9 @@ pub fn extract_qmc_raw_key_from_ekey(ekey: &str) -> Result<Vec<u8>, QmcError> {
         if decrypted.len() < key_length {
             continue;
         }
-        let candidate = &decrypted[decrypted.len() - key_length..];
+        let Some(candidate) = decrypted.get(decrypted.len() - key_length..) else {
+            continue;
+        };
         if STANDARD.decode(candidate).is_ok() {
             return Ok(candidate.as_bytes().to_vec());
         }
@@ -270,6 +272,11 @@ fn simple_make_key(salt: usize, length: usize) -> Vec<u8> {
 }
 
 fn tea_decrypt_block(block: &[u8], key: &[u8]) -> Result<[u8; 8], QmcError> {
+    if block.len() != 8 || key.len() != 16 {
+        return Err(QmcError::Value(
+            "invalid tea block or key length".to_string(),
+        ));
+    }
     let mut v0 = u32::from_be_bytes(
         block[0..4]
             .try_into()
@@ -335,7 +342,7 @@ fn decrypt_tencent_tea(input_buffer: &[u8], key: &[u8]) -> Result<Vec<u8>, QmcEr
     const SALT_LEN: usize = 2;
     const ZERO_LEN: usize = 7;
 
-    if input_buffer.len() % 8 != 0 {
+    if !input_buffer.len().is_multiple_of(8) {
         return Err(QmcError::Value(
             "inBuf size not a multiple of the block size".to_string(),
         ));
@@ -346,7 +353,10 @@ fn decrypt_tencent_tea(input_buffer: &[u8], key: &[u8]) -> Result<Vec<u8>, QmcEr
 
     let mut decrypted_block = tea_decrypt_block(&input_buffer[..8], key)?;
     let pad_len = (decrypted_block[0] & 0x7) as usize;
-    let output_len = input_buffer.len() - 1 - pad_len - SALT_LEN - ZERO_LEN;
+    let output_len = input_buffer
+        .len()
+        .checked_sub(1 + pad_len + SALT_LEN + ZERO_LEN)
+        .ok_or_else(|| QmcError::Value("invalid tea padding length".to_string()))?;
     let mut output = vec![0u8; output_len];
 
     let mut iv_prev = [0u8; 8];
@@ -600,7 +610,7 @@ impl Rc4Cipher {
             }
         }
 
-        if offset % RC4_SEGMENT_SIZE != 0 {
+        if !offset.is_multiple_of(RC4_SEGMENT_SIZE) {
             let block_size = to_process.min(RC4_SEGMENT_SIZE - offset % RC4_SEGMENT_SIZE);
             self.decrypt_segment(&mut buffer[processed..processed + block_size], offset);
             offset += block_size;
@@ -649,6 +659,9 @@ fn new_qmc_cipher(key: Vec<u8>) -> Result<QmcCipher, QmcError> {
 }
 
 pub fn decrypt_qmc_bytes(data: &[u8], raw_key: &[u8], offset: usize) -> Result<Vec<u8>, QmcError> {
+    offset
+        .checked_add(data.len())
+        .ok_or_else(|| QmcError::Value("qmc offset exceeds the supported range".to_string()))?;
     let cipher = new_qmc_cipher(derive_qmc_key(raw_key)?)?;
     let mut buffer = data.to_vec();
     cipher.decrypt(&mut buffer, offset);

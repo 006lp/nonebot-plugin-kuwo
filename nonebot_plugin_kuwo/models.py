@@ -16,10 +16,11 @@ class KuwoSearchSong(BaseModel):
     duration: int = Field(alias="DURATION")
     web_album_cover_short: str = Field(alias="web_albumpic_short", default="")
 
-    @field_validator("duration", mode="before")
+    @field_validator("musicrid")
     @classmethod
-    def parse_duration(cls, value: int | str) -> int:
-        return int(value)
+    def validate_musicrid(cls, value: str) -> str:
+        normalize_musicrid(value)
+        return value
 
     @field_validator("web_album_cover_short", mode="before")
     @classmethod
@@ -43,11 +44,6 @@ class KuwoSearchResponse(BaseModel):
     total: int = Field(alias="TOTAL", default=0)
     songs: list[KuwoSearchSong] = Field(alias="abslist")
 
-    @field_validator("total", mode="before")
-    @classmethod
-    def parse_total(cls, value: int | str) -> int:
-        return int(value)
-
 
 class KuwoTrackLinkData(BaseModel):
     bitrate: int
@@ -56,11 +52,6 @@ class KuwoTrackLinkData(BaseModel):
     ekey: str | None = None
     rid: int
     url: str
-
-    @field_validator("bitrate", "duration", "rid", mode="before")
-    @classmethod
-    def parse_numeric_fields(cls, value: int | str) -> int:
-        return int(value)
 
     @property
     def direct_url(self) -> str:
@@ -72,11 +63,6 @@ class KuwoTrackLinkResponse(BaseModel):
     data: KuwoTrackLinkData
     msg: str = ""
 
-    @field_validator("code", mode="before")
-    @classmethod
-    def parse_code(cls, value: int | str) -> int:
-        return int(value)
-
 
 class KuwoTrackDetail(BaseModel):
     song_id: int = Field(alias="id")
@@ -84,11 +70,6 @@ class KuwoTrackDetail(BaseModel):
     artist: str = ""
     album: str = ""
     cover_url: str | None = Field(alias="albumPic", default=None)
-
-    @field_validator("song_id", mode="before")
-    @classmethod
-    def parse_song_id(cls, value: int | str) -> int:
-        return int(value)
 
     @field_validator("cover_url", mode="before")
     @classmethod
@@ -104,11 +85,6 @@ class KuwoTrackDetailResponse(BaseModel):
     errormsg: str = ""
     result: str = ""
     songs: list[KuwoTrackDetail] = Field(default_factory=list)
-
-    @field_validator("errorcode", mode="before")
-    @classmethod
-    def parse_error_code(cls, value: int | str) -> int:
-        return int(value)
 
 
 class KuwoTrackResource(BaseModel):
