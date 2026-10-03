@@ -65,7 +65,7 @@ fn render_svg_to_png(
         .detach(|| {
             render::render_svg_to_png(svg, scale, &font_files, &font_dirs, load_system_fonts)
         })
-        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        .map_err(PyValueError::new_err)?;
     Ok(PyBytes::new(py, &png).into())
 }
 

@@ -115,6 +115,9 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 | `KUWO_RENDER_FONT_DIRS` | 未配置 | 图片渲染额外扫描的字体目录 |
 
 图片列表由 Rust 原生扩展内置的 `resvg` 渲染，随 wheel 一起分发，不需要 Playwright / Chromium，也不需要额外安装浏览器系统级依赖。中文歌名依赖宿主系统已安装的 CJK 字体；若运行环境（例如精简 Docker 镜像）没有任何中文字体，可用 `KUWO_RENDER_FONT_FILES` / `KUWO_RENDER_FONT_DIRS` 显式指定字体文件或字体目录。
+
+字体配置使用 JSON 数组，例如 `KUWO_RENDER_FONT_FILES=["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"]`。没有可用字体或原生渲染失败时，搜索列表会自动回退到文本并记录原因。升级后可移除仅为本插件设置的 `RENDER_BACKEND=playwright`。
+
 音质枚举：
 
 - `standard`
@@ -143,7 +146,9 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
   - 每行格式：`序号. 音乐id 歌曲名-歌手`
 - `image`
   - 使用 Rust 原生扩展（`resvg`）把搜索列表渲染成 PNG
-  - 封面图先下载并以 base64 内嵌，下载失败时使用占位块
+  - 复用搜索接口的 `web_albumpic_short`，并发下载封面后以内嵌图片渲染
+  - 封面下载超过 5 MiB、尺寸超过单边 4096px / 总计 4194304 像素、格式不支持或解码失败时使用矢量占位图
+  - 并发搜索的图片任务排队执行，原生渲染在线程中运行；画布上限为 8388608 像素
   - 渲染失败时自动回退到文本
 
 ### 单曲输出
@@ -252,6 +257,7 @@ cargo fmt --all --check
 
 ```text
 nonebot_plugin_kuwo/
+├── _native.py
 ├── __init__.py
 ├── config.py
 ├── data_source.py

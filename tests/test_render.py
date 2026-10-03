@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import base64
 import importlib
 import re
 import struct
 import threading
+import zlib
 from pathlib import Path
+from xml.etree import ElementTree
 
 import httpx
 import pytest
@@ -27,8 +31,8 @@ def import_models_module():
     return importlib.import_module("nonebot_plugin_kuwo.models")
 
 
-def import_qmc_module():
-    return importlib.import_module("nonebot_plugin_kuwo.qmc")
+def import_native_module():
+    return importlib.import_module("nonebot_plugin_kuwo._native")
 
 
 def import_uniseg_module():
@@ -76,7 +80,7 @@ class FakeStreamResponse:
         if self.status_code >= 400:
             raise httpx.HTTPError(f"status {self.status_code}")
 
-    async def aiter_bytes(self):
+    async def aiter_bytes(self, **kwargs):
         self.body_read = True
         chunk_size = max(1, len(self.content) // 3)
         for start in range(0, len(self.content), chunk_size):
@@ -118,32 +122,32 @@ def patch_cover_client(
 
 
 def test_native_renderer_scales_output() -> None:
-    qmc = import_qmc_module()
+    native = import_native_module()
     svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50">'
         '<rect width="100" height="50" fill="#c26a2d"/>'
         "</svg>"
     )
 
-    assert png_size(qmc.render_svg_to_png(svg)) == (100, 50)
-    assert png_size(qmc.render_svg_to_png(svg, scale=2.0)) == (200, 100)
+    assert png_size(native.render_svg_to_png(svg)) == (100, 50)
+    assert png_size(native.render_svg_to_png(svg, scale=2.0)) == (200, 100)
 
 
 @pytest.mark.parametrize("scale", [0.0, -1.0, 9.0, float("nan"), float("inf")])
 def test_native_renderer_rejects_invalid_scale(scale: float) -> None:
-    qmc = import_qmc_module()
+    native = import_native_module()
     svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
 
     with pytest.raises(ValueError):
-        qmc.render_svg_to_png(svg, scale=scale)
+        native.render_svg_to_png(svg, scale=scale)
 
 
 def test_native_renderer_rejects_oversized_document() -> None:
-    qmc = import_qmc_module()
+    native = import_native_module()
     svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20000" height="10"/>'
 
     with pytest.raises(ValueError):
-        qmc.render_svg_to_png(svg)
+        native.render_svg_to_png(svg)
 
 
 def test_truncate_counts_cjk_as_two_units() -> None:
@@ -212,8 +216,7 @@ def test_build_search_results_svg_draws_vector_placeholder() -> None:
 
     assert "NO COVER" not in svg
     assert "<circle" in svg
-    assert 'clip-path="url(#cover-clip-1)"' not in svg or "cover-clip-1" in svg
-    assert "cover-clip-1" in svg
+    assert "cover-clip-1" not in svg
 
 
 def test_build_search_results_svg_clips_text_block() -> None:
@@ -250,16 +253,13 @@ def test_build_search_results_svg_escapes_song_fields() -> None:
 
 def test_resolve_font_sources_filters_missing_paths(tmp_path: Path) -> None:
     render = import_render_module()
-    config_module = import_config_module()
     font_file = tmp_path / "font.ttf"
     font_file.write_bytes(b"")
 
-    config = config_module.Config(
-        kuwo_render_font_files=[str(font_file), str(tmp_path / "missing.ttf")],
-        kuwo_render_font_dirs=[str(tmp_path), str(tmp_path / "missing-dir")],
+    font_files, font_dirs = render.resolve_font_sources(
+        [str(font_file), str(tmp_path / "missing.ttf")],
+        [str(tmp_path), str(tmp_path / "missing-dir")],
     )
-
-    font_files, font_dirs = render.resolve_font_sources(config)
 
     assert font_files == [str(font_file)]
     assert font_dirs == [str(tmp_path)]
@@ -366,7 +366,6 @@ async def test_render_search_results_image_mode_returns_image(
     message = await render.render_search_results(
         [build_search_song()],
         config_module.ListRenderMode.IMAGE,
-        config_module.Config(),
     )
 
     assert message == uniseg.UniMessage([uniseg.Image(raw=b"native-image")])
@@ -398,7 +397,6 @@ async def test_render_search_results_falls_back_to_text_when_render_fails(
     result = await render.render_search_results(
         [build_search_song()],
         config_module.ListRenderMode.IMAGE,
-        config_module.Config(),
     )
 
     assert result == "1. 553152678 Summer Pockets-rionos"
@@ -420,8 +418,179 @@ async def test_render_search_results_text_mode_skips_cover_download(
     result = await render.render_search_results(
         [build_search_song()],
         config_module.ListRenderMode.TEXT,
-        config_module.Config(),
     )
 
     assert result == "1. 553152678 Summer Pockets-rionos"
     assert downloads == []
+
+
+@pytest.mark.parametrize("width,height,scale", [(10000, 10000, 1), (1000, 1000, 3)])
+def test_native_renderer_rejects_excessive_total_pixels(
+    width: int, height: int, scale: float
+) -> None:
+    native = import_native_module()
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"/>'
+    with pytest.raises(ValueError, match="pixel limit"):
+        native.render_svg_to_png(svg, scale=scale, load_system_fonts=False)
+
+
+def test_native_renderer_rejects_excessive_svg_bytes() -> None:
+    native = import_native_module()
+    with pytest.raises(ValueError, match="byte limit"):
+        native.render_svg_to_png(" " * (16 * 1024 * 1024 + 1))
+
+
+def test_native_renderer_reports_missing_fonts_for_text() -> None:
+    native = import_native_module()
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50">'
+        '<text x="0" y="20">夏日口袋</text></svg>'
+    )
+    with pytest.raises(ValueError, match="no fonts available"):
+        native.render_svg_to_png(svg, load_system_fonts=False)
+
+
+def make_cover_png(width: int, height: int) -> bytes:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + kind
+            + data
+            + struct.pack(">I", zlib.crc32(kind + data))
+        )
+
+    # Valid, highly compressible RGBA data exercises the decoded pixel limit.
+    row = b"\x00" + b"\x00\xff\x00\xff" * width
+    return (
+        PNG_MAGIC
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(row * height))
+        + chunk(b"IEND", b"")
+    )
+
+
+@pytest.mark.parametrize("width,height", [(4097, 1), (2049, 2049)])
+def test_native_renderer_skips_oversized_covers(width: int, height: int) -> None:
+    native = import_native_module()
+    render = import_render_module()
+    songs = [build_search_song()]
+    png = make_cover_png(width, height)
+    assert len(png) < render.MAX_COVER_BYTES
+    uri = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    rendered = native.render_svg_to_png(render._build_search_results_svg(songs, [uri]))
+    placeholder = native.render_svg_to_png(
+        render._build_search_results_svg(songs, [None])
+    )
+    assert rendered == placeholder
+
+
+def test_native_renderer_renders_valid_embedded_cover() -> None:
+    native = import_native_module()
+    render = import_render_module()
+    songs = [build_search_song()]
+    uri = "data:image/png;base64," + base64.b64encode(make_cover_png(2, 2)).decode()
+    rendered = native.render_svg_to_png(render._build_search_results_svg(songs, [uri]))
+    placeholder = native.render_svg_to_png(
+        render._build_search_results_svg(songs, [None])
+    )
+    assert rendered != placeholder
+
+
+def test_search_results_svg_removes_invalid_xml_characters() -> None:
+    render = import_render_module()
+    svg = render._build_search_results_svg(
+        [build_search_song(NAME="夏日\x00口袋", ARTIST="A\ud800&B", ALBUM="<live>")],
+        [None],
+    )
+    root = ElementTree.fromstring(svg)
+    text = "".join(root.itertext())
+    assert "夏日口袋" in text
+    assert "A&B" in text
+    assert "<live>" in text
+
+
+@pytest.mark.asyncio
+async def test_render_search_results_falls_back_without_fonts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    render = import_render_module()
+    native = import_native_module()
+    config = import_config_module()
+
+    def render_without_fonts(svg: str, **kwargs) -> bytes:
+        return native.render_svg_to_png(svg, load_system_fonts=False)
+
+    monkeypatch.setattr(render, "render_svg_to_png", render_without_fonts)
+    message = await render.render_search_results(
+        [build_search_song()], config.ListRenderMode.IMAGE
+    )
+    assert message == "1. 553152678 Summer Pockets-rionos"
+
+
+@pytest.mark.asyncio
+async def test_render_serializes_native_work_and_keeps_slot_on_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    render = import_render_module()
+    config = import_config_module()
+    monkeypatch.setattr(render, "_image_render_lock", asyncio.Lock())
+    started = threading.Event()
+    release = threading.Event()
+    active = 0
+    peak = 0
+
+    def slow_render(svg: str, **kwargs) -> bytes:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        started.set()
+        assert release.wait(timeout=5)
+        active -= 1
+        return b"native-image"
+
+    monkeypatch.setattr(render, "render_svg_to_png", slow_render)
+    first = asyncio.create_task(
+        render.render_search_results([build_search_song()], config.ListRenderMode.IMAGE)
+    )
+    second = None
+    try:
+        assert await asyncio.to_thread(started.wait, 2)
+        first.cancel()
+        second = asyncio.create_task(
+            render.render_search_results(
+                [build_search_song()], config.ListRenderMode.IMAGE
+            )
+        )
+        await asyncio.sleep(0.05)
+        assert not first.done()
+        assert active == 1
+    finally:
+        release.set()
+        await asyncio.gather(
+            *(task for task in (first, second) if task is not None),
+            return_exceptions=True,
+        )
+    assert first.cancelled()
+    assert peak == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_cover_follows_redirects(monkeypatch: pytest.MonkeyPatch) -> None:
+    render = import_render_module()
+    cover = make_cover_png(2, 2)
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(".jpg"):
+            return httpx.Response(302, headers={"location": "/cover.png"})
+        return httpx.Response(200, content=cover, headers={"content-type": "image/png"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+
+        async def fake_get_http_client():
+            return client
+
+        monkeypatch.setattr(render, "get_http_client", fake_get_http_client)
+        uri = await render._fetch_cover_data_uri(
+            build_search_song(web_albumpic_short=COVER_PATH)
+        )
+    assert uri == "data:image/png;base64," + base64.b64encode(cover).decode()

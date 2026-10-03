@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from functools import lru_cache
-from importlib import import_module
 from pathlib import Path
 from typing import Protocol, cast
+
+from ._native import load_extension
 
 
 class _QmcExtension(Protocol):
@@ -20,26 +20,10 @@ class _QmcExtension(Protocol):
         ekey: str,
         chunk_size: int = 65536,
     ) -> None: ...
-    def render_svg_to_png(
-        self,
-        svg: str,
-        scale: float = 1.0,
-        font_files: list[str] | None = None,
-        font_dirs: list[str] | None = None,
-        load_system_fonts: bool = True,
-    ) -> bytes: ...
 
 
-@lru_cache(maxsize=1)
 def _load_extension() -> _QmcExtension:
-    try:
-        module = import_module("nonebot_plugin_kuwo._qmc_rs")
-    except ImportError as exc:  # pragma: no cover - requires native build
-        raise ImportError(
-            "nonebot_plugin_kuwo Rust extension is missing. "
-            "Run `uv run maturin develop` or install a built wheel."
-        ) from exc
-    return cast(_QmcExtension, module)
+    return cast(_QmcExtension, load_extension())
 
 
 def kuwo_base64_decrypt(value: str) -> str:
@@ -75,30 +59,10 @@ def decrypt_mflac_file(
     return target_path
 
 
-def render_svg_to_png(
-    svg: str,
-    *,
-    scale: float = 1.0,
-    font_files: list[str | Path] | None = None,
-    font_dirs: list[str | Path] | None = None,
-    load_system_fonts: bool = True,
-) -> bytes:
-    """Rasterise an SVG document into PNG bytes via the native resvg backend."""
-
-    return _load_extension().render_svg_to_png(
-        svg,
-        scale,
-        [str(item) for item in font_files] if font_files else None,
-        [str(item) for item in font_dirs] if font_dirs else None,
-        load_system_fonts,
-    )
-
-
 __all__ = [
     "decrypt_mflac_file",
     "decrypt_qmc_bytes",
     "derive_qmc_key",
     "extract_qmc_raw_key_from_ekey",
     "kuwo_base64_decrypt",
-    "render_svg_to_png",
 ]

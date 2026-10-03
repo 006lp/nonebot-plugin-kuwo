@@ -208,7 +208,7 @@ async def search_songs(keyword: str, limit: int) -> list[KuwoSearchSong]:
         keyword,
         len(search_response.songs),
     )
-    return search_response.songs
+    return search_response.songs[:limit]
 
 
 async def get_song_media(rid: str, br: str) -> KuwoTrackResource:

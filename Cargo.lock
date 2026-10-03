@@ -261,7 +261,7 @@ name = "nonebot-plugin-kuwo-rust"
 version = "0.2.7"
 dependencies = [
  "base64 0.22.1",
- "fontdb",
+ "imagesize",
  "pyo3",
  "resvg",
 ]

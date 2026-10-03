@@ -32,30 +32,12 @@ const PREFERRED_FONT_FAMILIES: &[&str] = &[
 const MAX_RENDER_SCALE: f32 = 8.0;
 /// Upper bound for either pixmap dimension, in pixels.
 const MAX_RENDER_DIMENSION: u32 = 16_384;
-
-/// Errors raised while rasterising an SVG document into PNG bytes.
-#[derive(Debug)]
-pub enum RenderError {
-    InvalidScale(String),
-    Font(String),
-    Parse(String),
-    Size(String),
-    Encode(String),
-}
-
-impl std::fmt::Display for RenderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidScale(message)
-            | Self::Font(message)
-            | Self::Parse(message)
-            | Self::Size(message)
-            | Self::Encode(message) => f.write_str(message),
-        }
-    }
-}
-
-impl std::error::Error for RenderError {}
+/// Bound decoded memory as well as each dimension.
+const MAX_RENDER_PIXELS: u64 = 8_388_608;
+const MAX_COVER_PIXELS: usize = 4_194_304;
+const MAX_COVER_DIMENSION: usize = 4_096;
+const MAX_COVER_BYTES: usize = 5 * 1024 * 1024;
+const MAX_SVG_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, PartialEq, Eq)]
 struct FontCacheKey {
@@ -93,7 +75,7 @@ fn build_font_database(
     font_files: &[String],
     font_dirs: &[String],
     load_system_fonts: bool,
-) -> Result<ResolvedFonts, RenderError> {
+) -> Result<ResolvedFonts, String> {
     let mut database = fontdb::Database::new();
 
     if load_system_fonts {
@@ -105,9 +87,9 @@ fn build_font_database(
     }
 
     for file in font_files {
-        database.load_font_file(file).map_err(|error| {
-            RenderError::Font(format!("failed to load font file {file}: {error}"))
-        })?;
+        database
+            .load_font_file(file)
+            .map_err(|error| format!("failed to load font file {file}: {error}"))?;
     }
 
     // Without this the generic families stay pinned to Arial / Times New Roman,
@@ -133,7 +115,7 @@ fn resolve_fonts(
     font_files: &[String],
     font_dirs: &[String],
     load_system_fonts: bool,
-) -> Result<ResolvedFonts, RenderError> {
+) -> Result<ResolvedFonts, String> {
     let key = FontCacheKey {
         font_files: font_files.to_vec(),
         font_dirs: font_dirs.to_vec(),
@@ -167,36 +149,81 @@ pub fn render_svg_to_png(
     font_files: &[String],
     font_dirs: &[String],
     load_system_fonts: bool,
-) -> Result<Vec<u8>, RenderError> {
+) -> Result<Vec<u8>, String> {
     if !scale.is_finite() || scale <= 0.0 || scale > MAX_RENDER_SCALE {
-        return Err(RenderError::InvalidScale(format!(
+        return Err(format!(
             "scale must be finite and within (0, {MAX_RENDER_SCALE}], got {scale}"
-        )));
+        ));
+    }
+    if svg.len() > MAX_SVG_BYTES {
+        return Err(format!("SVG exceeds the {MAX_SVG_BYTES} byte limit"));
     }
 
+    let document = usvg::roxmltree::Document::parse(svg).map_err(|error| error.to_string())?;
+
     let fonts = resolve_fonts(font_files, font_dirs, load_system_fonts)?;
+    if fonts.database.is_empty()
+        && document
+            .descendants()
+            .any(|node| node.has_tag_name(("http://www.w3.org/2000/svg", "text")))
+    {
+        return Err(
+            "no fonts available for SVG text; install a CJK font or configure font sources"
+                .to_string(),
+        );
+    }
 
     let mut options = usvg::Options::default();
     if let Some(family) = &fonts.default_family {
         options.font_family = family.clone();
     }
     options.fontdb = fonts.database;
+    // Covers are embedded raster images. Inspect headers before any decoder
+    // allocates pixel buffers, and never resolve local files or nested SVGs.
+    let default_data_resolver = usvg::ImageHrefResolver::default_data_resolver();
+    options.image_href_resolver = usvg::ImageHrefResolver {
+        resolve_string: Box::new(|_, _| None),
+        resolve_data: Box::new(move |mime, data, options| {
+            if data.len() > MAX_COVER_BYTES
+                || !matches!(
+                    mime,
+                    "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+                )
+            {
+                return None;
+            }
+            let size = imagesize::blob_size(&data).ok()?;
+            if size.width == 0
+                || size.height == 0
+                || size.width > MAX_COVER_DIMENSION
+                || size.height > MAX_COVER_DIMENSION
+                || size.width.checked_mul(size.height)? > MAX_COVER_PIXELS
+            {
+                return None;
+            }
+            default_data_resolver(mime, data, options)
+        }),
+    };
 
-    let tree = usvg::Tree::from_str(svg, &options)
-        .map_err(|error| RenderError::Parse(error.to_string()))?;
+    let tree = usvg::Tree::from_xmltree(&document, &options).map_err(|error| error.to_string())?;
 
     let size = tree.size();
     let width = (size.width() * scale).ceil().max(1.0) as u32;
     let height = (size.height() * scale).ceil().max(1.0) as u32;
 
     if width > MAX_RENDER_DIMENSION || height > MAX_RENDER_DIMENSION {
-        return Err(RenderError::Size(format!(
+        return Err(format!(
             "render size {width}x{height} exceeds the {MAX_RENDER_DIMENSION}px limit"
-        )));
+        ));
+    }
+    if u64::from(width) * u64::from(height) > MAX_RENDER_PIXELS {
+        return Err(format!(
+            "render size {width}x{height} exceeds the {MAX_RENDER_PIXELS} pixel limit"
+        ));
     }
 
     let mut pixmap = tiny_skia::Pixmap::new(width, height)
-        .ok_or_else(|| RenderError::Size(format!("cannot allocate pixmap of {width}x{height}")))?;
+        .ok_or_else(|| format!("cannot allocate pixmap of {width}x{height}"))?;
 
     resvg::render(
         &tree,
@@ -204,7 +231,5 @@ pub fn render_svg_to_png(
         &mut pixmap.as_mut(),
     );
 
-    pixmap
-        .encode_png()
-        .map_err(|error| RenderError::Encode(error.to_string()))
+    pixmap.encode_png().map_err(|error| error.to_string())
 }
