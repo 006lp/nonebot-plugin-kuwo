@@ -111,7 +111,7 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 | `KUWO_TRACK_CACHE_RETENTION_DAYS` | `1` | 文件缓存保留天数，`0` 表示关闭按天清理 |
 | `KUWO_TRACK_CACHE_MAX_SIZE_MB` | `1024` | 文件缓存总大小上限，`0` 表示关闭按大小清理 |
 
-`RENDER_BACKEND` 是 `nonebot-plugin-htmlrender` 的配置项。使用 `KUWO_LIST_RENDER_MODE=image` 时需要设置为 `playwright`；未配置时图片渲染会失败并自动回退到文本列表。当前项目已按 `nonebot-plugin-htmlrender>=0.7.1` 验证：默认 `RENDER_STARTUP_MODE=off` 时不会在 NoneBot 启动阶段预热浏览器，首次图片渲染会按需启动，详情见 [nonebot-plugin-htmlrender 文档](https://github.com/kexue-z/nonebot-plugin-htmlrender)。
+`RENDER_BACKEND` 是 `nonebot-plugin-htmlrender` 的配置项。使用 `KUWO_LIST_RENDER_MODE=image` 时需要设置为 `playwright`；未配置时图片渲染会失败并自动回退到文本列表。当前项目依赖限定为 `nonebot-plugin-htmlrender>=0.7.1,<0.8`，暂时避开 0.8 系列的破坏性更新。默认 `RENDER_STARTUP_MODE=off` 时不会在 NoneBot 启动阶段预热浏览器，首次图片渲染会按需启动，详情见 [nonebot-plugin-htmlrender 文档](https://github.com/kexue-z/nonebot-plugin-htmlrender)。
 
 音质枚举：
 
@@ -216,9 +216,21 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 
 项目强制使用 `uv`。
 
+当前版本 `0.2.7` 的本地验证环境为 Python `3.13.16` / Rust `1.99.0`，插件支持 Python `>=3.10`，原生扩展使用 `abi3-py310`。
+构建工具使用 `maturin>=1.15.0,<2.0`，Rust 绑定使用 `pyo3 0.29.3`；Release 工作流固定使用 maturin `1.15.0`。
+
 ```bash
-uv sync
-uv run maturin develop --release
+uv sync --dev --locked
+uv run maturin develop --release --locked
+```
+
+更新依赖后需要重新构建原生扩展：
+
+```bash
+uv lock --upgrade
+cargo update
+uv sync --dev --locked
+uv run maturin develop --release --locked
 ```
 
 常用命令：
@@ -226,7 +238,7 @@ uv run maturin develop --release
 ```bash
 uv run ruff check .
 uv run pytest tests -q -p no:cacheprovider
-cargo fmt --all
+cargo fmt --all --check
 ```
 
 说明：

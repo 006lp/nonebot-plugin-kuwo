@@ -55,7 +55,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          maturin-version: "1.13.1"
+          maturin-version: "1.15.0"
           command: build
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}

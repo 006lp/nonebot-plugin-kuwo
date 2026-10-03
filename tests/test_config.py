@@ -135,9 +135,11 @@ def test_get_runtime_config_warns_when_track_cache_max_size_below_recommended(
     assert config.kuwo_track_cache_max_size_mb == 512
     assert warnings == [
         (
-            "KUWO_TRACK_CACHE_MAX_SIZE_MB={} is smaller than the recommended minimum "
-            "600MB; a single master-quality mflac may temporarily need about 500MB "
-            "during decrypt.",
+            (
+                "KUWO_TRACK_CACHE_MAX_SIZE_MB={} is smaller than the recommended minimum "
+                "600MB; a single master-quality mflac may temporarily need about 500MB "
+                "during decrypt."
+            ),
             (512,),
         )
     ]

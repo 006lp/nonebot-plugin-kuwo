@@ -1,4 +1,3 @@
-# ruff: noqa: E402
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -293,9 +292,10 @@ async def render_search_results(
         len(songs),
     )
     if mode is ListRenderMode.IMAGE:
+        # Third-party rendering failures must fall back to text and are logged below.
         try:
             return await _render_search_results_image(songs)
-        except Exception as exc:  # pragma: no cover - fallback branch
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover
             logger.opt(exception=exc).warning(
                 "Search result image rendering failed; fallback to text mode"
             )
