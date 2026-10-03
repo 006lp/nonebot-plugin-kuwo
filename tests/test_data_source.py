@@ -108,6 +108,22 @@ async def test_search_songs_success() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_search_songs_enforces_limit_on_remote_results() -> None:
+    data_source = import_data_source_module()
+    payload = {**SEARCH_RESPONSE, "abslist": SEARCH_RESPONSE["abslist"] * 12}
+    respx.get(data_source.SEARCH_API_URL).mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+
+    try:
+        songs = await data_source.search_songs("Morning Dew Reflection", 5)
+        assert len(songs) == 5
+    finally:
+        await data_source.close_http_client()
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_search_songs_raises_on_invalid_payload() -> None:
     data_source = import_data_source_module()
     respx.get(data_source.SEARCH_API_URL).mock(

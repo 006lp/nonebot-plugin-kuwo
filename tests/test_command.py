@@ -108,20 +108,26 @@ async def test_kwsearch_command_returns_image_results(
     config_module = import_config_module()
     uniseg = import_uniseg_module()
     dummy_matcher = DummyMatcher()
-    render_calls: dict[str, str] = {}
+    render_calls: dict[str, object] = {}
+    cover_calls: dict[str, object] = {}
 
     async def fake_search(keyword: str, limit: int):
         assert keyword == "Morning Dew Reflection"
         assert limit == 5
         return [build_search_song(web_albumpic_short="120/s4s64/98/1370027605.jpg")]
 
-    async def fake_render_html(html: str, **kwargs) -> bytes:
-        render_calls["html"] = html
-        render_calls["template_path"] = kwargs["template_path"]
+    async def fake_fetch_cover(song):
+        cover_calls["url"] = song.album_cover_url
+        return "data:image/png;base64,AAAA"
+
+    def fake_render_svg_to_png(svg: str, **kwargs) -> bytes:
+        render_calls["svg"] = svg
+        render_calls["scale"] = kwargs["scale"]
         return b"rendered-image"
 
     monkeypatch.setattr(plugin, "search_songs", fake_search)
-    monkeypatch.setattr(render_module, "render_html", fake_render_html)
+    monkeypatch.setattr(render_module, "_fetch_cover_data_uri", fake_fetch_cover)
+    monkeypatch.setattr(render_module, "render_svg_to_png", fake_render_svg_to_png)
     monkeypatch.setattr(plugin, "kwsearch", dummy_matcher)
     monkeypatch.setattr(
         plugin,
@@ -141,11 +147,12 @@ async def test_kwsearch_command_returns_image_results(
         [uniseg.Image(raw=b"rendered-image")]
     )
 
-    assert (
+    assert cover_calls["url"] == (
         "http://img1.kwcdn.kuwo.cn/star/albumcover/120/s4s64/98/1370027605.jpg"
-        in render_calls["html"]
     )
-    assert render_calls["template_path"].startswith("file://")
+    assert "data:image/png;base64,AAAA" in render_calls["svg"]
+    assert "3:02" in render_calls["svg"]
+    assert render_calls["scale"] == 2.0
 
 
 def test_kw_command_parses_quality_option_after_spaced_keyword() -> None:

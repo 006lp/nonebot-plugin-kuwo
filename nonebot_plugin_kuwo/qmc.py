@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from functools import lru_cache
-from importlib import import_module
 from pathlib import Path
 from typing import Protocol, cast
+
+from ._native import load_extension
 
 
 class _QmcExtension(Protocol):
@@ -22,16 +22,8 @@ class _QmcExtension(Protocol):
     ) -> None: ...
 
 
-@lru_cache(maxsize=1)
 def _load_extension() -> _QmcExtension:
-    try:
-        module = import_module("nonebot_plugin_kuwo._qmc_rs")
-    except ImportError as exc:  # pragma: no cover - requires native build
-        raise ImportError(
-            "nonebot_plugin_kuwo Rust extension is missing. "
-            "Run `uv run maturin develop` or install a built wheel."
-        ) from exc
-    return cast(_QmcExtension, module)
+    return cast(_QmcExtension, load_extension())
 
 
 def kuwo_base64_decrypt(value: str) -> str:

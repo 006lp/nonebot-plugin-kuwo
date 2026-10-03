@@ -80,7 +80,6 @@ body:
         Python: 3.12.x
         nonebot2: 2.5.x
         nonebot-plugin-alconna: 0.62.x
-        nonebot-plugin-htmlrender: 0.7.x
         nonebot-plugin-localstore: 0.7.x
         adapter: nonebot-adapter-onebot x.x.x
         protocol client: NapCat x.x.x
@@ -98,7 +97,6 @@ body:
         KUWO_LIST_RENDER_MODE=text
         KUWO_TRACK_RENDER_MODE=text
         KUWO_DEFAULT_QUALITY=standard
-        RENDER_BACKEND=playwright
     validations:
       required: true
 

@@ -8,3 +8,10 @@ def decrypt_mflac_file(
     ekey: str,
     chunk_size: int = 65536,
 ) -> None: ...
+def render_svg_to_png(
+    svg: str,
+    scale: float = 1.0,
+    font_files: list[str] | None = None,
+    font_dirs: list[str] | None = None,
+    load_system_fonts: bool = True,
+) -> bytes: ...

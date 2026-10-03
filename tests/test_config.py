@@ -143,3 +143,22 @@ def test_get_runtime_config_warns_when_track_cache_max_size_below_recommended(
             (512,),
         )
     ]
+
+
+def test_config_defaults_render_font_sources_to_empty_lists() -> None:
+    config_module = import_config_module()
+    config = config_module.Config()
+
+    assert config.kuwo_render_font_files == []
+    assert config.kuwo_render_font_dirs == []
+
+
+def test_config_normalizes_render_font_sources() -> None:
+    config_module = import_config_module()
+    config = config_module.Config(
+        kuwo_render_font_files=" /a.ttf , /b.ttf ",
+        kuwo_render_font_dirs=["/fonts", "  ", None],
+    )
+
+    assert config.kuwo_render_font_files == ["/a.ttf", "/b.ttf"]
+    assert config.kuwo_render_font_dirs == ["/fonts"]

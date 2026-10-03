@@ -34,22 +34,3 @@ def after_nonebot_init() -> None:
     import nonebot
 
     nonebot.load_plugin("nonebot_plugin_kuwo")
-
-    driver = nonebot.get_driver()
-    lifespan = getattr(driver, "_lifespan", None)
-    if lifespan is None:
-        return
-
-    for attr_name in ("_startup_funcs", "_shutdown_funcs"):
-        funcs = getattr(lifespan, attr_name, None)
-        if not isinstance(funcs, list):
-            continue
-        setattr(
-            lifespan,
-            attr_name,
-            [
-                func
-                for func in funcs
-                if getattr(func, "__module__", "") != "nonebot_plugin_htmlrender"
-            ],
-        )
