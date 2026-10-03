@@ -28,6 +28,11 @@ const PREFERRED_FONT_FAMILIES: &[&str] = &[
     "Helvetica",
 ];
 
+/// Upper bound for the rasterisation scale factor.
+const MAX_RENDER_SCALE: f32 = 8.0;
+/// Upper bound for either pixmap dimension, in pixels.
+const MAX_RENDER_DIMENSION: u32 = 16_384;
+
 /// Errors raised while rasterising an SVG document into PNG bytes.
 #[derive(Debug)]
 pub enum RenderError {
@@ -163,9 +168,9 @@ pub fn render_svg_to_png(
     font_dirs: &[String],
     load_system_fonts: bool,
 ) -> Result<Vec<u8>, RenderError> {
-    if !scale.is_finite() || scale <= 0.0 {
+    if !scale.is_finite() || scale <= 0.0 || scale > MAX_RENDER_SCALE {
         return Err(RenderError::InvalidScale(format!(
-            "scale must be a positive finite number, got {scale}"
+            "scale must be finite and within (0, {MAX_RENDER_SCALE}], got {scale}"
         )));
     }
 
@@ -183,6 +188,12 @@ pub fn render_svg_to_png(
     let size = tree.size();
     let width = (size.width() * scale).ceil().max(1.0) as u32;
     let height = (size.height() * scale).ceil().max(1.0) as u32;
+
+    if width > MAX_RENDER_DIMENSION || height > MAX_RENDER_DIMENSION {
+        return Err(RenderError::Size(format!(
+            "render size {width}x{height} exceeds the {MAX_RENDER_DIMENSION}px limit"
+        )));
+    }
 
     let mut pixmap = tiny_skia::Pixmap::new(width, height)
         .ok_or_else(|| RenderError::Size(format!("cannot allocate pixmap of {width}x{height}")))?;
