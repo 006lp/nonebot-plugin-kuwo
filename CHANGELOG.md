@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 - 2026-10-25
+
+- 将 HTTP 客户端连接超时从 5 秒放宽到 10 秒；读取、写入和连接池等待超时保持 10 秒，不增加自动重试
+
 ## 0.3.0 - 2026-10-25
 
 - **Breaking Changes**：搜索结果图片从 `nonebot-plugin-htmlrender` 迁移到 SVG 模板与 Rust `resvg` 渲染，移除 Playwright / Chromium 依赖，不再需要 `RENDER_BACKEND=playwright`

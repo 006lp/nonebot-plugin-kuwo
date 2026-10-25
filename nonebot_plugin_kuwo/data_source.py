@@ -25,7 +25,7 @@ from .models import (
 SEARCH_API_URL = "http://search.kuwo.cn/r.s"
 TRACK_API_URL = "https://changenotice.kuwo.cn/mobi.s"
 DETAIL_API_URL = "http://musicpay.kuwo.cn/music.pay"
-DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=10.0)
 TRACK_USER_ALPHABET = string.ascii_lowercase + string.digits
 TRACK_USER_LENGTH = 16
 
