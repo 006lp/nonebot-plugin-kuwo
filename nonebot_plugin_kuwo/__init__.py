@@ -32,7 +32,7 @@ from .data_source import (
 )
 from .files import download_track_file
 from .models import KuwoTrackResource
-from .render import render_search_results
+from .render import get_render_config_dir, render_search_results
 from .utils import build_track_message, join_keyword_parts, normalize_musicrid
 
 __plugin_meta__ = PluginMetadata(
@@ -47,6 +47,7 @@ __plugin_meta__ = PluginMetadata(
 
 driver = get_driver()
 driver.on_startup(initialize_http_client)
+driver.on_startup(get_render_config_dir)
 driver.on_shutdown(close_http_client)
 
 
@@ -196,8 +197,7 @@ async def handle_kwsearch(arp: Arparma) -> None:
     message = await render_search_results(
         songs,
         config.kuwo_list_render_mode,
-        font_files=config.kuwo_render_font_files,
-        font_dirs=config.kuwo_render_font_dirs,
+        custom_font=config.kuwo_render_custom_font,
     )
     logger.debug(
         "kwsearch render completed: keyword={}, message_type={}, segment_count={}",

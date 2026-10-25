@@ -104,6 +104,7 @@ async def test_kwsearch_command_returns_text_results(
 @pytest.mark.asyncio
 async def test_kwsearch_command_returns_image_results(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     plugin = import_plugin_module()
     render_module = import_render_module()
@@ -112,6 +113,9 @@ async def test_kwsearch_command_returns_image_results(
     dummy_matcher = DummyMatcher()
     render_calls: dict[str, object] = {}
     cover_calls: dict[str, object] = {}
+    font_path = tmp_path / "custom.ttf"
+    font_path.touch()
+    monkeypatch.setattr(render_module, "_render_config_dir", tmp_path)
 
     async def fake_search(keyword: str, limit: int):
         assert keyword == "Morning Dew Reflection"
@@ -125,6 +129,7 @@ async def test_kwsearch_command_returns_image_results(
     def fake_render_svg_to_png(svg: str, **kwargs) -> bytes:
         render_calls["svg"] = svg
         render_calls["scale"] = kwargs["scale"]
+        render_calls["font_files"] = kwargs["font_files"]
         return b"rendered-image"
 
     monkeypatch.setattr(plugin, "search_songs", fake_search)
@@ -139,6 +144,7 @@ async def test_kwsearch_command_returns_image_results(
             kuwo_list_render_mode=config_module.ListRenderMode.IMAGE,
             kuwo_track_render_mode=config_module.TrackRenderMode.TEXT,
             kuwo_default_quality="standard",
+            kuwo_render_custom_font="custom.ttf",
         ),
     )
 
@@ -155,6 +161,7 @@ async def test_kwsearch_command_returns_image_results(
     assert "data:image/png;base64,AAAA" in render_calls["svg"]
     assert "3:02" in render_calls["svg"]
     assert render_calls["scale"] == 2.0
+    assert render_calls["font_files"] == [str(font_path)]
 
 
 def test_kw_command_parses_quality_option_after_spaced_keyword() -> None:

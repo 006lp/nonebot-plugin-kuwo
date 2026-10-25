@@ -145,20 +145,19 @@ def test_get_runtime_config_warns_when_track_cache_max_size_below_recommended(
     ]
 
 
-def test_config_defaults_render_font_sources_to_empty_lists() -> None:
+def test_config_defaults_to_system_fonts() -> None:
     config_module = import_config_module()
     config = config_module.Config()
 
-    assert config.kuwo_render_font_files == []
-    assert config.kuwo_render_font_dirs == []
+    assert config.kuwo_render_custom_font is None
 
 
-def test_config_normalizes_render_font_sources() -> None:
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, None), ("", None), ("   ", None), ("  我的字体.ttf  ", "我的字体.ttf")],
+)
+def test_config_normalizes_render_custom_font(value, expected) -> None:
     config_module = import_config_module()
-    config = config_module.Config(
-        kuwo_render_font_files=" /a.ttf , /b.ttf ",
-        kuwo_render_font_dirs=["/fonts", "  ", None],
-    )
+    config = config_module.Config(kuwo_render_custom_font=value)
 
-    assert config.kuwo_render_font_files == ["/a.ttf", "/b.ttf"]
-    assert config.kuwo_render_font_dirs == ["/fonts"]
+    assert config.kuwo_render_custom_font == expected

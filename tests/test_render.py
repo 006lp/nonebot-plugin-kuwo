@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import importlib
+import os
 import re
+import shutil
 import struct
 import threading
 import zlib
@@ -37,6 +39,30 @@ def import_native_module():
 
 def import_uniseg_module():
     return importlib.import_module("nonebot_plugin_alconna.uniseg")
+
+
+@pytest.fixture
+def installed_font() -> tuple[Path, str]:
+    """Use an optional host font without shipping a font in the project."""
+    candidates = [
+        (
+            Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/times.ttf",
+            "Times New Roman",
+        ),
+        (Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"), "DejaVu Serif"),
+        (
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf"),
+            "Liberation Serif",
+        ),
+        (
+            Path("/System/Library/Fonts/Supplemental/Times New Roman.ttf"),
+            "Times New Roman",
+        ),
+    ]
+    for path, family in candidates:
+        if path.is_file():
+            return path, family
+    pytest.skip("No known host font is available for native custom-font tests")
 
 
 def build_search_song(**overrides: object):
@@ -251,59 +277,91 @@ def test_build_search_results_svg_escapes_song_fields() -> None:
     assert "<live>" not in svg
 
 
-def test_resolve_font_sources_filters_missing_paths(tmp_path: Path) -> None:
-    render = import_render_module()
-    font_file = tmp_path / "font.ttf"
-    font_file.write_bytes(b"")
-
-    font_files, font_dirs = render.resolve_font_sources(
-        [str(font_file), str(tmp_path / "missing.ttf")],
-        [str(tmp_path), str(tmp_path / "missing-dir")],
-    )
-
-    assert font_files == [str(font_file)]
-    assert font_dirs == [str(tmp_path)]
-
-
-def test_resolve_font_sources_defaults_to_bundled_font() -> None:
-    render = import_render_module()
-    assert render.BUNDLED_FONT_PATH.is_file()
-    assert render.resolve_font_sources([], []) == ([str(render.BUNDLED_FONT_PATH)], [])
-
-
-def test_resolve_font_sources_uses_bundle_for_missing_custom_paths(
-    tmp_path: Path,
+def test_render_config_dir_is_resolved_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     render = import_render_module()
-    assert render.resolve_font_sources(
-        [str(tmp_path / "missing.ttf")], [str(tmp_path / "missing-dir")]
-    ) == ([str(render.BUNDLED_FONT_PATH)], [])
+    calls = []
+
+    def fake_get_plugin_config_dir():
+        calls.append(True)
+        return tmp_path
+
+    monkeypatch.setattr(render, "_render_config_dir", None)
+    monkeypatch.setattr(render, "get_plugin_config_dir", fake_get_plugin_config_dir)
+
+    assert render.get_render_config_dir() == tmp_path
+    assert render.get_render_config_dir() == tmp_path
+    assert calls == [True]
 
 
-def test_resolve_font_sources_accepts_custom_directory(tmp_path: Path) -> None:
+def test_render_config_dir_uses_localstore(monkeypatch: pytest.MonkeyPatch) -> None:
     render = import_render_module()
-    assert render.resolve_font_sources([], [str(tmp_path)]) == ([], [str(tmp_path)])
+    store = importlib.import_module("nonebot_plugin_localstore")
+    monkeypatch.setattr(render, "_render_config_dir", None)
+
+    directory = render.get_render_config_dir()
+    assert directory == store.BASE_CONFIG_DIR / "nonebot_plugin_kuwo"
+    assert directory.is_dir()
+
+
+@pytest.mark.parametrize("filename", [None, "missing.ttf", "directory.ttf"])
+def test_resolve_custom_font_uses_system_fonts_without_a_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, filename: str | None
+) -> None:
+    render = import_render_module()
+    monkeypatch.setattr(render, "_render_config_dir", tmp_path)
+    (tmp_path / "directory.ttf").mkdir()
+    assert render.resolve_custom_font(filename) == []
+
+
+def test_resolve_custom_font_uses_config_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    render = import_render_module()
+    monkeypatch.setattr(render, "_render_config_dir", tmp_path)
+    font_file = tmp_path / "我的 字体.ttf"
+    font_file.touch()
+    assert render.resolve_custom_font(font_file.name) == [str(font_file)]
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        ".",
+        "..",
+        "../outside.ttf",
+        "/tmp/font.ttf",
+        "C:/font.ttf",
+        "C:\\font.ttf",
+        "sub/font.ttf",
+        "sub\\font.ttf",
+    ],
+)
+def test_resolve_custom_font_rejects_paths(filename: str) -> None:
+    render = import_render_module()
+    assert render.resolve_custom_font(filename) == []
 
 
 @pytest.mark.parametrize("source", ["file", "directory"])
 def test_native_renderer_prioritizes_explicit_font_over_system_fonts(
-    source: str,
+    source: str, installed_font: tuple[Path, str], tmp_path: Path
 ) -> None:
-    render = import_render_module()
     native = import_native_module()
+    font_path, family = installed_font
+    custom_font = tmp_path / font_path.name
+    shutil.copyfile(font_path, custom_font)
     svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="60">'
         '<text x="0" y="40" font-size="28" font-family="sans-serif">'
         "夏日口袋 猛独が襲う MIKU</text></svg>"
     )
     kwargs = (
-        {"font_files": [str(render.BUNDLED_FONT_PATH)]}
+        {"font_files": [str(custom_font)]}
         if source == "file"
-        else {"font_dirs": [str(render.BUNDLED_FONT_PATH.parent)]}
+        else {"font_dirs": [str(tmp_path)]}
     )
-    explicit_svg = svg.replace(
-        'font-family="sans-serif"', 'font-family="LXGW WenKai Mono"'
-    )
+    explicit_svg = svg.replace('font-family="sans-serif"', f'font-family="{family}"')
     generic = native.render_svg_to_png(svg, **kwargs)
     assert generic == native.render_svg_to_png(explicit_svg, **kwargs)
     assert generic != native.render_svg_to_png(
@@ -418,27 +476,33 @@ async def test_render_search_results_image_mode_returns_image(
     assert calls["cover_song_id"] == "553152678"
     assert calls["kwargs"] == {
         "scale": render.IMAGE_SCALE,
-        "font_files": [str(render.BUNDLED_FONT_PATH)],
-        "font_dirs": [],
+        "font_files": [],
     }
     assert calls["thread"] != threading.main_thread().name
 
 
 @pytest.mark.asyncio
-async def test_search_image_uses_bundled_font_without_system_fonts(
+async def test_search_image_uses_custom_font_without_system_fonts(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    installed_font: tuple[Path, str],
 ) -> None:
     render = import_render_module()
     native = import_native_module()
     config = import_config_module()
     uniseg = import_uniseg_module()
+    font_path, _ = installed_font
+    shutil.copyfile(font_path, tmp_path / "custom.ttf")
+    monkeypatch.setattr(render, "_render_config_dir", tmp_path)
 
     def render_without_system_fonts(svg: str, **kwargs) -> bytes:
         return native.render_svg_to_png(svg, load_system_fonts=False, **kwargs)
 
     monkeypatch.setattr(render, "render_svg_to_png", render_without_system_fonts)
     songs = [build_search_song(NAME="夏日口袋", ARTIST="初音ミク")]
-    message = await render.render_search_results(songs, config.ListRenderMode.IMAGE)
+    message = await render.render_search_results(
+        songs, config.ListRenderMode.IMAGE, custom_font="custom.ttf"
+    )
     assert isinstance(message, uniseg.UniMessage)
     assert isinstance(message[0], uniseg.Image)
     assert png_size(message[0].raw_bytes)[0] == render.CANVAS_WIDTH * render.IMAGE_SCALE
@@ -576,19 +640,24 @@ def test_search_results_svg_removes_invalid_xml_characters() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("filename", [None, "missing.ttf", "invalid.ttf"])
 async def test_render_search_results_falls_back_without_fonts(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    filename: str | None,
 ) -> None:
     render = import_render_module()
     native = import_native_module()
     config = import_config_module()
+    monkeypatch.setattr(render, "_render_config_dir", tmp_path)
+    (tmp_path / "invalid.ttf").write_bytes(b"not a font")
 
     def render_without_fonts(svg: str, **kwargs) -> bytes:
-        return native.render_svg_to_png(svg, load_system_fonts=False)
+        return native.render_svg_to_png(svg, load_system_fonts=False, **kwargs)
 
     monkeypatch.setattr(render, "render_svg_to_png", render_without_fonts)
     message = await render.render_search_results(
-        [build_search_song()], config.ListRenderMode.IMAGE
+        [build_search_song()], config.ListRenderMode.IMAGE, custom_font=filename
     )
     assert message == "1. 553152678 Summer Pockets-rionos"
 

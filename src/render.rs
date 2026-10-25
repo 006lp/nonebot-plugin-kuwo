@@ -88,8 +88,8 @@ fn build_font_database(
         database.load_fonts_dir(directory);
     }
 
-    // Explicit sources take priority over system fonts, including the bundled
-    // default passed by the plugin. File order is preserved before directories.
+    // Explicit sources take priority over system fonts.
+    // File order is preserved before directories.
     let explicit_family = database
         .faces()
         .find_map(|face| face.families.first().map(|(name, _)| name.clone()));

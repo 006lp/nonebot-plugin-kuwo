@@ -9,8 +9,12 @@ from html import escape
 from pathlib import Path
 
 import httpx
-from nonebot import logger
+from nonebot import logger, require
+
+require("nonebot_plugin_localstore")
+
 from nonebot_plugin_alconna.uniseg import Image, UniMessage
+from nonebot_plugin_localstore import get_plugin_config_dir
 
 from ._native import render_svg_to_png
 from .config import ListRenderMode
@@ -41,7 +45,6 @@ TEXT_BLOCK_GAP = 12
 IMAGE_SCALE = 2.0
 COVER_FETCH_TIMEOUT = 8.0
 MAX_COVER_BYTES = 5 * 1024 * 1024
-BUNDLED_FONT_PATH = Path(__file__).with_name("fonts") / "LXGWWenKaiMono-Regular.ttf"
 
 TITLE_MAX_UNITS = 44
 ARTIST_MAX_UNITS = 56
@@ -69,6 +72,7 @@ _INVALID_XML_CHARACTERS = re.compile(
     r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]"
 )
 _image_render_lock = asyncio.Lock()
+_render_config_dir: Path | None = None
 
 
 def _render_search_results_text(songs: Sequence[KuwoSearchSong]) -> str:
@@ -81,39 +85,36 @@ def _render_search_results_text(songs: Sequence[KuwoSearchSong]) -> str:
     )
 
 
-def resolve_font_sources(
-    extra_files: Sequence[str], extra_dirs: Sequence[str]
-) -> tuple[list[str], list[str]]:
-    """Use custom font sources when present, otherwise the bundled CJK font."""
+def get_render_config_dir() -> Path:
+    global _render_config_dir
+    if _render_config_dir is None:
+        _render_config_dir = get_plugin_config_dir()
+        logger.info("Kuwo render font config directory: {}", _render_config_dir)
+    return _render_config_dir
 
-    font_files: list[str] = []
-    for raw_path in extra_files:
-        path = Path(raw_path).expanduser()
-        if not path.is_file():
-            logger.warning("Configured render font file does not exist: {}", path)
-            continue
-        font_files.append(str(path))
 
-    font_dirs: list[str] = []
-    for raw_path in extra_dirs:
-        path = Path(raw_path).expanduser()
-        if not path.is_dir():
-            logger.warning("Configured render font directory does not exist: {}", path)
-            continue
-        font_dirs.append(str(path))
+def resolve_custom_font(custom_font: str | None) -> list[str]:
+    """Resolve a user-provided font filename inside the plugin config directory."""
+    if not custom_font:
+        return []
+    if custom_font in {".", ".."} or any(char in custom_font for char in "/\\:"):
+        logger.warning(
+            "KUWO_RENDER_CUSTOM_FONT must be a filename in the plugin config "
+            "directory; using system fonts instead: {}",
+            custom_font,
+        )
+        return []
 
-    if not font_files and not font_dirs:
-        if BUNDLED_FONT_PATH.is_file():
-            font_files.append(str(BUNDLED_FONT_PATH))
-        else:
-            logger.warning("Bundled render font is missing: {}", BUNDLED_FONT_PATH)
-
-    logger.debug(
-        "Resolved render font sources: font_files={}, font_dirs={}",
-        font_files,
-        font_dirs,
-    )
-    return font_files, font_dirs
+    font_path = get_render_config_dir() / custom_font
+    if not font_path.is_file():
+        logger.warning(
+            "Configured render font file does not exist; using system fonts "
+            "instead: {}",
+            font_path,
+        )
+        return []
+    logger.debug("Using custom render font: {}", font_path)
+    return [str(font_path)]
 
 
 def _character_width(character: str) -> int:
@@ -396,8 +397,7 @@ def _build_search_results_svg(
 
 async def _render_search_results_image(
     songs: Sequence[KuwoSearchSong],
-    extra_files: Sequence[str],
-    extra_dirs: Sequence[str],
+    custom_font: str | None,
 ) -> UniMessage:
     logger.info(
         "Rendering kuwo search results in image mode: song_count={}", len(songs)
@@ -408,21 +408,19 @@ async def _render_search_results_image(
     )
     svg = _build_search_results_svg(songs, cover_data_uris)
 
-    font_files, font_dirs = resolve_font_sources(extra_files, extra_dirs)
+    font_files = resolve_custom_font(custom_font)
     logger.debug(
         "Calling native svg renderer for kuwo search results: svg_length={}, "
-        "scale={}, font_files={}, font_dirs={}",
+        "scale={}, font_files={}",
         len(svg),
         IMAGE_SCALE,
         font_files,
-        font_dirs,
     )
     image_bytes = await asyncio.to_thread(
         render_svg_to_png,
         svg,
         scale=IMAGE_SCALE,
         font_files=font_files,
-        font_dirs=font_dirs,
     )
     logger.info(
         "Rendered kuwo search result image successfully: byte_length={}",
@@ -435,8 +433,7 @@ async def render_search_results(
     songs: Sequence[KuwoSearchSong],
     mode: ListRenderMode,
     *,
-    font_files: Sequence[str] = (),
-    font_dirs: Sequence[str] = (),
+    custom_font: str | None = None,
 ) -> str | UniMessage:
     logger.info(
         "Starting kuwo search result render: mode={}, song_count={}",
@@ -449,7 +446,7 @@ async def render_search_results(
             # Bound cover buffers and native work across simultaneous commands.
             async with _image_render_lock:
                 return await wait_for_completion(
-                    _render_search_results_image(songs, font_files, font_dirs)
+                    _render_search_results_image(songs, custom_font)
                 )
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=exc).warning(
