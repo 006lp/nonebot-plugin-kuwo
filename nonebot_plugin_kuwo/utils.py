@@ -162,7 +162,7 @@ def build_track_message(
 
     if render_mode is TrackRenderMode.CARD:
         card = MusicShare(
-            kind=MusicShareKind.Custom,
+            kind=MusicShareKind.KuwoMusic,
             url=direct_url,
             audio=direct_url,
             title=title or f"歌曲 ID {rid}",

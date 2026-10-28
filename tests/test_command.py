@@ -299,7 +299,7 @@ async def test_kw_command_returns_music_card(
     expected = uniseg.UniMessage(
         [
             music_share.MusicShare(
-                kind=music_share.MusicShareKind.Custom,
+                kind=music_share.MusicShareKind.KuwoMusic,
                 url="http://example.com/song.mp3",
                 audio="http://example.com/song.mp3",
                 title="Morning Dew Reflection.wav",
@@ -713,7 +713,7 @@ async def test_kwid_command_returns_music_card(
     expected = uniseg.UniMessage(
         [
             music_share.MusicShare(
-                kind=music_share.MusicShareKind.Custom,
+                kind=music_share.MusicShareKind.KuwoMusic,
                 url="http://example.com/song-lossless.flac",
                 audio="http://example.com/song-lossless.flac",
                 title="Pocket wo Fukurasete ~Sea, you again~",

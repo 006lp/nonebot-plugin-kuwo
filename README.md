@@ -257,7 +257,7 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 
 项目强制使用 `uv`。
 
-当前版本 `0.3.1` 的本地验证环境为 Python `3.13.16` / Rust `1.99.0`，插件支持 Python `>=3.10`，原生扩展使用 `abi3-py310`。Python 与 Cargo 的项目版本统一为 `0.3.1`，版本变更后需同步更新 `uv.lock` 和 `Cargo.lock`。
+当前版本 `0.3.2` 的本地验证环境为 Python `3.13.16` / Rust `1.99.0`，插件支持 Python `>=3.10`，原生扩展使用 `abi3-py310`。Python 与 Cargo 的项目版本统一为 `0.3.2`，版本变更后需同步更新 `uv.lock` 和 `Cargo.lock`。
 构建工具使用 `maturin>=1.15.0,<2.0`，Rust 绑定使用 `pyo3 0.29.3`；Release 工作流固定使用 maturin `1.15.0`。
 
 ```bash
