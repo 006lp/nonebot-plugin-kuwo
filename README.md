@@ -32,21 +32,6 @@
 > uv add "nonebot-plugin-kuwo==0.2.7"
 > ```
 
-## 功能
-
-- `kwsearch <关键词>`
-  - 返回搜索结果列表
-  - 支持 `text` / `image`
-- `kw搜索 <关键词>`
-  - `kwsearch` 中文别名
-- `kw <关键词> [-q/--quality <quality>]`
-  - 搜索后直接取第一首歌
-  - 支持 `text` / `card` / `record` / `file`
-- `kwid <rid> [-q/--quality <quality>]`
-  - 直接通过 `rid` 获取歌曲
-  - 支持 `text` / `card` / `record` / `file`
-
-
 ## 安装
 
 ### nb-cli
@@ -126,8 +111,8 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `KUWO_SEARCH_LIMIT` | `5` | 搜索结果条数，范围 `1-10` |
-| `KUWO_LIST_RENDER_MODE` | `text` | 搜索列表模式，支持 `text` / `image` |
-| `KUWO_TRACK_RENDER_MODE` | `text` | 单曲输出模式，支持 `text` / `card` / `record` / `file` |
+| `KUWO_LIST_RENDER_MODE` | `text` | 默认搜索列表模式，支持 `text` / `image` |
+| `KUWO_TRACK_RENDER_MODE` | `text` | 默认单曲输出模式，支持 `text` / `card` / `record` / `file` |
 | `KUWO_DEFAULT_QUALITY` | `standard` | 默认音质 |
 | `KUWO_TRACK_PROXY_URL` | 未配置 | 由于版权相关问题，海外用户请求歌曲直链时需要使用境内 HTTP/HTTPS 代理，例如 `http://user:pass@127.0.0.1:7890` |
 | `KUWO_TRACK_CACHE_RETENTION_DAYS` | `1` | 文件缓存保留天数，`0` 表示关闭按天清理 |
@@ -167,6 +152,21 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
 
 ## 使用
 
+### 命令参数
+
+| 参数 | 适用命令 | 说明 |
+| --- | --- | --- |
+| `-m/--mode <mode>` | 所有命令 | 指定本次输出方式，取值见下方搜索列表与单曲输出说明 |
+| `-q/--quality <quality>` | `kw` / `kwid` | 指定本次音质，取值见配置中的音质枚举 |
+
+参数可放在关键词或 `rid` 前后，并可组合使用。模式值不区分大小写；不支持的模式会提示可选值。参数仅对本次命令生效，省略时沿用对应的输出模式配置和 `KUWO_DEFAULT_QUALITY`。
+
+```text
+/kwsearch 周杰伦 -m image
+/kw 晴天 -m file -q lossless
+/kwid 553152678 --mode record
+```
+
 ### 搜索列表
 
 `kwsearch` / `kw搜索` 当前支持两种输出：
@@ -199,22 +199,6 @@ KUWO_TRACK_CACHE_MAX_SIZE_MB=1024
   - 下载到本地缓存后发送文件段
   - `.mflac` 会先解密成可播放的 `.flac`
   - 上传文件名使用 `[quality]歌曲名 - 歌手.扩展名`，`quality` 为最终生效音质，例如 `[lossless]Summer - rionos.flac`
-
-### 音质参数
-
-`kw` 和 `kwid` 都支持：
-
-```text
--q
---quality
-```
-
-示例：
-
-```text
-/kw Summer Pockets -q lossless
-/kwid 553152678 --quality exhigh
-```
 
 ## 文件缓存与 `.mflac`
 

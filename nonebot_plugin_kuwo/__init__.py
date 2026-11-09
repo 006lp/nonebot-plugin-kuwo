@@ -17,6 +17,7 @@ from .config import (
     TrackRenderMode,
     get_quality_bitrate,
     get_runtime_config,
+    resolve_render_mode,
     resolve_track_quality,
 )
 from .data_source import (
@@ -38,7 +39,11 @@ from .utils import build_track_message, join_keyword_parts, normalize_musicrid
 __plugin_meta__ = PluginMetadata(
     name="酷我音乐",
     description="酷我音乐搜索与直链发送插件",
-    usage="/kwsearch <关键词>、/kw <关键词>、/kwid <rid>",
+    usage=(
+        "/kwsearch <关键词> [-m/--mode text|image]\n"
+        "/kw <关键词> [-m/--mode text|card|record|file] [-q/--quality <音质>]\n"
+        "/kwid <rid> [-m/--mode text|card|record|file] [-q/--quality <音质>]"
+    ),
     type="application",
     homepage="https://github.com/006lp/nonebot-plugin-kuwo",
     config=Config,
@@ -52,7 +57,11 @@ driver.on_shutdown(close_http_client)
 
 
 kwsearch = on_alconna(
-    Alconna("kwsearch", Args["keyword", MultiVar(str, "*")]),
+    Alconna(
+        "kwsearch",
+        Option("-m|--mode", Args["mode", str]),
+        Args["keyword", MultiVar(str, "*")],
+    ),
     aliases={"kw搜索"},
     use_cmd_start=True,
     block=True,
@@ -60,6 +69,7 @@ kwsearch = on_alconna(
 kw = on_alconna(
     Alconna(
         "kw",
+        Option("-m|--mode", Args["mode", str]),
         Option("-q|--quality", Args["quality", str]),
         Args["keyword", MultiVar(str, "*")],
     ),
@@ -69,6 +79,7 @@ kw = on_alconna(
 kwid = on_alconna(
     Alconna(
         "kwid",
+        Option("-m|--mode", Args["mode", str]),
         Option("-q|--quality", Args["quality", str]),
         Args["rid", str],
     ),
@@ -167,11 +178,18 @@ async def handle_kwsearch(arp: Arparma) -> None:
     if not keyword:
         await kwsearch.finish("请输入搜索关键词")
 
+    try:
+        render_mode = resolve_render_mode(
+            config.kuwo_list_render_mode, arp.all_matched_args.get("mode")
+        )
+    except ValueError:
+        await kwsearch.finish("搜索列表输出支持：text、image")
+
     logger.info(
         "Received kwsearch command: keyword={}, limit={}, render_mode={}",
         keyword,
         config.kuwo_search_limit,
-        config.kuwo_list_render_mode.value,
+        render_mode.value,
     )
 
     try:
@@ -196,7 +214,7 @@ async def handle_kwsearch(arp: Arparma) -> None:
 
     message = await render_search_results(
         songs,
-        config.kuwo_list_render_mode,
+        render_mode,
         custom_font=config.kuwo_render_custom_font,
     )
     logger.debug(
@@ -216,6 +234,27 @@ async def handle_kw(arp: Arparma) -> None:
         await kw.finish("请输入搜索关键词")
 
     try:
+        render_mode = resolve_render_mode(
+            config.kuwo_track_render_mode, arp.all_matched_args.get("mode")
+        )
+    except ValueError:
+        await kw.finish("单曲输出支持：text、card、record、file")
+
+    try:
+        quality = _resolve_command_quality(
+            command_name="kw",
+            render_mode=render_mode,
+            requested_quality=arp.all_matched_args.get("quality"),
+            default_quality=config.kuwo_default_quality,
+        )
+    except ValueError:
+        await kw.finish("请输入正确的音质参数")
+
+    logger.info(
+        "Received kw command: keyword={}, render_mode={}", keyword, render_mode.value
+    )
+
+    try:
         songs = await search_songs(keyword, 1)
     except KuwoSearchNetworkError as exc:
         logger.opt(exception=exc).warning(
@@ -231,16 +270,6 @@ async def handle_kw(arp: Arparma) -> None:
 
     if not songs:
         await kw.finish("未找到相关歌曲")
-
-    try:
-        quality = _resolve_command_quality(
-            command_name="kw",
-            render_mode=config.kuwo_track_render_mode,
-            requested_quality=arp.all_matched_args.get("quality"),
-            default_quality=config.kuwo_default_quality,
-        )
-    except ValueError:
-        await kw.finish("请输入正确的音质参数")
 
     try:
         song = songs[0]
@@ -264,7 +293,7 @@ async def handle_kw(arp: Arparma) -> None:
                 media.cover_url,
             )
         message = await _build_track_message(
-            render_mode=config.kuwo_track_render_mode,
+            render_mode=render_mode,
             media=media,
             quality=quality,
             title=song.name,
@@ -281,7 +310,7 @@ async def handle_kw(arp: Arparma) -> None:
         )
         await kw.finish(
             "下载歌曲文件失败"
-            if config.kuwo_track_render_mode is TrackRenderMode.FILE
+            if render_mode is TrackRenderMode.FILE
             else "获取播放链接失败"
         )
 
@@ -300,16 +329,23 @@ async def handle_kwid(arp: Arparma) -> None:
         await kwid.finish("请输入正确的音乐 ID")
 
     config = get_runtime_config()
+    try:
+        render_mode = resolve_render_mode(
+            config.kuwo_track_render_mode, arp.all_matched_args.get("mode")
+        )
+    except ValueError:
+        await kwid.finish("单曲输出支持：text、card、record、file")
+
     logger.debug(
         "Received kwid command: raw_rid={}, rid={}, render_mode={}",
         raw_rid,
         rid,
-        config.kuwo_track_render_mode.value,
+        render_mode.value,
     )
     try:
         quality = _resolve_command_quality(
             command_name="kwid",
-            render_mode=config.kuwo_track_render_mode,
+            render_mode=render_mode,
             requested_quality=arp.all_matched_args.get("quality"),
             default_quality=config.kuwo_default_quality,
         )
@@ -319,7 +355,7 @@ async def handle_kwid(arp: Arparma) -> None:
     try:
         media = await get_song_detailed_media(rid, get_quality_bitrate(quality))
         message = await _build_track_message(
-            render_mode=config.kuwo_track_render_mode,
+            render_mode=render_mode,
             media=media,
             quality=quality,
             title=media.title,
@@ -336,7 +372,7 @@ async def handle_kwid(arp: Arparma) -> None:
         )
         await kwid.finish(
             "下载歌曲文件失败"
-            if config.kuwo_track_render_mode is TrackRenderMode.FILE
+            if render_mode is TrackRenderMode.FILE
             else "获取歌曲信息失败"
         )
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, TypeVar
 from urllib.parse import urlparse
 
 from nonebot import get_plugin_config, logger
@@ -19,6 +19,9 @@ class TrackRenderMode(str, Enum):
     CARD = "card"
     RECORD = "record"
     FILE = "file"
+
+
+_RenderMode = TypeVar("_RenderMode", ListRenderMode, TrackRenderMode)
 
 
 class KuwoQuality(str, Enum):
@@ -120,6 +123,14 @@ def get_runtime_config() -> Config:
         )
         _warned_cache_size_limits.add(max_size_mb)
     return config
+
+
+def resolve_render_mode(
+    default_mode: _RenderMode, requested_mode: str | None = None
+) -> _RenderMode:
+    if requested_mode is None:
+        return default_mode
+    return type(default_mode)(_normalize_enum_input(requested_mode))
 
 
 def parse_quality(value: str | KuwoQuality | None) -> KuwoQuality | None:
