@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to publish, for example v0.3.2
+        description: Release tag to publish, for example v0.3.3
         required: true
         type: string
   push:
@@ -55,7 +55,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          maturin-version: "1.15.0"
+          maturin-version: "1.16.0"
           command: build
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}

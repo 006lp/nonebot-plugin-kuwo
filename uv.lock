@@ -668,7 +668,7 @@ wheels = [
 
 [[package]]
 name = "nonebot-plugin-kuwo"
-version = "0.3.2"
+version = "0.3.3"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -699,13 +699,13 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "fastapi", specifier = ">=0.162.0,<1.0.0" },
-    { name = "maturin", specifier = ">=1.15.0,<2.0" },
+    { name = "fastapi", specifier = ">=0.162.2,<1.0.0" },
+    { name = "maturin", specifier = ">=1.16.0,<2.0" },
     { name = "nonebug", specifier = ">=0.4.4" },
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "pytest-asyncio", specifier = ">=1.4.1" },
     { name = "respx", specifier = ">=0.23.1" },
-    { name = "ruff", specifier = ">=0.17.3" },
+    { name = "ruff", specifier = ">=0.17.4" },
     { name = "uvicorn", specifier = ">=0.54.0,<1.0.0" },
 ]
 
